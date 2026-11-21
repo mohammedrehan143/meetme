@@ -78,12 +78,6 @@ async def get_settings():
         },
         "default_workspace_id": settings.DEFAULT_WORKSPACE_ID
     }
-            "masked_password": mask_key(settings.SMTP_PASSWORD),
-            "from_name": settings.SMTP_FROM_NAME,
-            "provider": "Gmail SMTP (STARTTLS / SSL)"
-        },
-        "default_workspace_id": settings.DEFAULT_WORKSPACE_ID
-    }
 
 @router.post("/api/settings")
 async def update_settings(payload: UpdateSettingsRequest):
