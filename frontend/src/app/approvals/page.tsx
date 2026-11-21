@@ -309,10 +309,19 @@ export default function ApprovalsPage() {
                             {p.assignee_name || "Unassigned"}
                           </strong>
                         </div>
-                        {p.assignee_email && (
+                        {p.assignee_email ? (
                           <div>
-                            Email: <strong className="text-text-primary">{p.assignee_email}</strong>
+                            Destination Email: <strong className="text-accent-neon font-semibold">{p.assignee_email}</strong>
                           </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(app)}
+                            className="text-accent-orange hover:underline flex items-center gap-1 font-semibold"
+                          >
+                            <Mail size={11} />
+                            <span>+ Specify Recipient Email</span>
+                          </button>
                         )}
                         <div>
                           Deadline: <strong className="text-accent-orange">{p.deadline || "TBD"}</strong>
@@ -423,13 +432,19 @@ export default function ApprovalsPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-text-secondary block mb-1">Assignee Email</label>
+                  <label className="text-text-secondary block mb-1 font-medium">
+                    Destination Email Address <span className="text-accent-orange">*</span>
+                  </label>
                   <input
                     type="email"
                     value={editAssigneeEmail}
                     onChange={(e) => setEditAssigneeEmail(e.target.value)}
-                    className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange"
+                    placeholder="e.g. 25ug1byai034@bmsit.in"
+                    className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
                   />
+                  <span className="text-[10px] text-text-muted mt-0.5 block">
+                    Task assignments and reminders will be delivered to this email address via Gmail SMTP upon approval.
+                  </span>
                 </div>
               </div>
 

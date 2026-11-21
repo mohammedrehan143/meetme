@@ -11,6 +11,16 @@ export default function EmailActivityPage() {
   const [previewEmail, setPreviewEmail] = useState<EmailLog | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
+  // Compose / Send Email State
+  const [showComposeModal, setShowComposeModal] = useState(false);
+  const [toEmail, setToEmail] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+
   useEffect(() => {
     loadEmails();
   }, []);
@@ -24,6 +34,39 @@ export default function EmailActivityPage() {
       console.error("Failed to load emails:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!toEmail.trim() || !subject.trim() || !message.trim()) {
+      setSendError("Please specify destination email, subject, and message content.");
+      return;
+    }
+    setSending(true);
+    setSendError(null);
+    setSendSuccess(null);
+    try {
+      await api.sendEmail({
+        to_email: toEmail.trim(),
+        recipient_name: recipientName.trim() || undefined,
+        subject: subject.trim(),
+        message: message.trim(),
+      });
+      setSendSuccess(`Email successfully delivered to ${toEmail.trim()} via Gmail SMTP!`);
+      setToEmail("");
+      setRecipientName("");
+      setSubject("");
+      setMessage("");
+      await loadEmails();
+      setTimeout(() => {
+        setShowComposeModal(false);
+        setSendSuccess(null);
+      }, 2500);
+    } catch (err: any) {
+      setSendError(err.message || "Failed to dispatch email");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -57,13 +100,26 @@ export default function EmailActivityPage() {
           </p>
         </div>
 
-        <button
-          onClick={loadEmails}
-          className="p-1.5 rounded bg-bg-card border border-border-subtle hover:border-border-strong text-text-secondary hover:text-text-primary"
-          title="Refresh"
-        >
-          <RotateCw size={14} className={loading ? "animate-spin" : ""} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setShowComposeModal(true);
+              setSendError(null);
+              setSendSuccess(null);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded text-xs font-semibold bg-accent-orange text-black hover:bg-accent-orange-hover transition-colors"
+          >
+            <Send size={13} />
+            <span>Send Email</span>
+          </button>
+          <button
+            onClick={loadEmails}
+            className="p-1.5 rounded bg-bg-card border border-border-subtle hover:border-border-strong text-text-secondary hover:text-text-primary"
+            title="Refresh"
+          >
+            <RotateCw size={14} className={loading ? "animate-spin" : ""} />
+          </button>
+        </div>
       </div>
 
       {/* Metrics Row */}
@@ -239,6 +295,120 @@ export default function EmailActivityPage() {
                 Close Audit View
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send Custom Email Modal */}
+      {showComposeModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="bg-bg-card border border-border-subtle rounded-lg max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border-subtle pb-3">
+              <div className="flex items-center gap-2">
+                <Send size={16} className="text-accent-orange" />
+                <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">
+                  Dispatch Custom Email via Native Gmail SMTP
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowComposeModal(false)}
+                className="text-text-muted hover:text-text-primary"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {sendSuccess && (
+              <div className="p-3 bg-accent-neon/10 border border-accent-neon/30 text-accent-neon text-xs rounded flex items-center gap-2">
+                <CheckCircle2 size={14} />
+                <span>{sendSuccess}</span>
+              </div>
+            )}
+
+            {sendError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                <AlertTriangle size={14} />
+                <span>{sendError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSendEmail} className="space-y-3 text-xs">
+              <div>
+                <label className="text-text-secondary block mb-1 font-medium">
+                  Destination Email Address <span className="text-accent-orange">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={toEmail}
+                  onChange={(e) => setToEmail(e.target.value)}
+                  placeholder="e.g. 25ug1byai034@bmsit.in"
+                  className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-text-secondary block mb-1 font-medium">
+                  Recipient Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                  placeholder="e.g. Lead Engineer / Participant"
+                  className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange"
+                />
+              </div>
+
+              <div>
+                <label className="text-text-secondary block mb-1 font-medium">
+                  Email Subject <span className="text-accent-orange">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="e.g. [MEETME] Task Assignment & Delivery Schedule"
+                  className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange"
+                />
+              </div>
+
+              <div>
+                <label className="text-text-secondary block mb-1 font-medium">
+                  Message Content <span className="text-accent-orange">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={5}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  placeholder="Type your message, task details, or meeting summary here..."
+                  className="w-full bg-bg-elevated border border-border-subtle rounded p-3 text-text-primary focus:outline-none focus:border-accent-orange leading-relaxed"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-between border-t border-border-subtle">
+                <span className="text-[10px] font-mono text-text-muted">Engine: Gmail SMTP STARTTLS (587)</span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowComposeModal(false)}
+                    className="px-3 py-1.5 rounded text-xs text-text-secondary hover:text-text-primary bg-bg-elevated"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={sending}
+                    className="px-4 py-1.5 rounded text-xs font-semibold bg-accent-orange text-black hover:bg-accent-orange-hover flex items-center gap-1.5 disabled:opacity-50 transition-colors"
+                  >
+                    <Send size={12} className={sending ? "animate-spin" : ""} />
+                    <span>{sending ? "Delivering via SMTP..." : "Send Email"}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

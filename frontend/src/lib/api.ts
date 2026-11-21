@@ -117,6 +117,18 @@ export const api = {
   async getEmails(): Promise<EmailLog[]> {
     return fetchJson<EmailLog[]>(`${API_BASE}/emails`);
   },
+  async sendEmail(data: {
+    to_email: string;
+    recipient_name?: string;
+    subject: string;
+    message: string;
+    email_type?: string;
+  }): Promise<any> {
+    return fetchJson(`${API_BASE}/emails/send`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
   async retryEmail(id: string): Promise<any> {
     return fetchJson(`${API_BASE}/emails/${id}/retry`, { method: "POST" });
   },
