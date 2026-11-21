@@ -101,10 +101,17 @@ async def update_settings(payload: UpdateSettingsRequest):
 @router.post("/api/settings/test-smtp")
 async def test_smtp_connection():
     """
-    Validates Gmail SMTP authentication via STARTTLS on port 587.
+    Validates Gmail SMTP authentication via STARTTLS on port 587 in a non-blocking thread.
     """
-    result = email_service.test_connection()
-    return result
+    import asyncio
+    try:
+        result = await asyncio.wait_for(asyncio.to_thread(email_service.test_connection), timeout=8.0)
+        return result
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "error": "SMTP connection timed out (8s limit). Hosting network may filter outbound SMTP port 587."
+        }
 
 @router.post("/api/demo/seed")
 async def seed_demo(
