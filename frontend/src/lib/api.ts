@@ -6,10 +6,15 @@ export const PRODUCTION_API_URL = "https://meetme-8r0u.onrender.com/api";
 export const PRODUCTION_WS_URL = "wss://meetme-8r0u.onrender.com";
 
 function resolveApiBase(): string {
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return `http://${host}:8000/api`;
+    }
+  }
   const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (!envUrl) return PRODUCTION_API_URL;
   let clean = envUrl.replace(/\/+$/, "");
-  // Ensure the base URL includes /api so endpoints like /meetings, /tasks map correctly
   if (!clean.endsWith("/api") && !clean.endsWith("/v1")) {
     clean = `${clean}/api`;
   }

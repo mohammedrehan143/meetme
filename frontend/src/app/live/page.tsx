@@ -42,13 +42,92 @@ interface DetectedDecision {
   summary: string;
 }
 
+// Instant keyword-based live classifier
+function classifyLiveText(text: string): {
+  classification: "TASK" | "DECISION" | "BLOCKER" | "QUESTION" | "IRRELEVANT" | "GENERAL_DISCUSSION";
+  detectedTask?: DetectedTask;
+  detectedDecision?: DetectedDecision;
+} {
+  const lower = text.toLowerCase().trim();
+
+  // 1. Task keyword detection
+  const isTask = (
+    /(?:assigned to|assign to|assigning to|assign this to|assigning this to|task for|action item|todo:|task:|action item for|please finish|please complete|please implement|please review|please deploy|please fix|please build|please test|please update|please prepare|please create|please configure|please audit|please handle|please write|take care of|take ownership|will complete|i will build|need to implement|responsible for|you are assigned|you're assigned|your task is|can you please|could you please|can you handle|could you handle|can you deploy|could you deploy|can you fix|could you fix|can you review|could you review|can you test|could you test|will handle)\b/i.test(text) ||
+    /^(?:hey\s+)?[A-Za-z]+(?:,\s*|\s*:\s*|\s+)(?:please|can you|could you|would you|you need to|you should|you take|take\s+care|work\s+on|handle|fix|implement|deploy|review|test|build|write|create|update)\b/i.test(text) ||
+    /\b[A-Za-z]+\s+(?:is assigned to|is responsible for|will handle|will deploy|will build|will implement|will test|will review)\b/i.test(text)
+  );
+
+  if (isTask) {
+    let assignee: string | undefined = undefined;
+    const subjMatch = text.match(/\b([A-Za-z]+)\s+(?:is assigned to|is responsible for|will handle|will deploy|will build)\b/i);
+    const assignMatch = text.match(/(?:assigned to|assign to|assigning to|assign this to|task for)\s+([A-Za-z0-9_\(\)\.\-]+)/i);
+    const addrMatch = text.match(/^(?:hey\s+)?([A-Za-z]+)(?:,\s*|\s*:\s*|\s+)(?:please|can you|could you|you|handle|fix|implement|deploy|review|test|build)/i);
+    const trailMatch = text.match(/(?:can you|could you|please)\s+.*?[,\s]+([A-Za-z]+)\??$/i);
+
+    if (subjMatch) assignee = subjMatch[1];
+    else if (assignMatch && !["anyone", "someone", "tbd", "unassigned", "the", "a"].includes(assignMatch[1].toLowerCase())) assignee = assignMatch[1];
+    else if (addrMatch && !["anyone", "someone", "everyone", "today", "tomorrow"].includes(addrMatch[1].toLowerCase())) assignee = addrMatch[1];
+    else if (trailMatch && !["please", "asap", "today", "tomorrow"].includes(trailMatch[1].toLowerCase())) assignee = trailMatch[1];
+
+    let clean = text
+      .replace(/^(?:\[?[\d:]+\]?\s*)?(?:[A-Za-z0-9_\s\(\)\.\-]+?:\s*)?/, "")
+      .replace(/^(?:hey\s+[A-Za-z]+[,\s]+|[A-Za-z]+,\s*|[A-Za-z]+:\s*)/i, "")
+      .replace(/^(?:assign(?:ed|ing)?\s+(?:(?:this\s+)?(?:task|action\s+item)\s+)?to\s+[A-Za-z0-9_\(\)\.\-]+(?:\s*:\s*|\s+to\s+|\s+for\s+|\s+)?|[A-Za-z0-9_\(\)\.\-]+\s+is\s+assigned\s+to\s+)/i, "")
+      .replace(/^(?:can\s+you\s+(?:please\s+)?|could\s+you\s+(?:please\s+)?|please\s+|would\s+you\s+(?:please\s+)?|i\s+will\s+|i'll\s+|need\s+to\s+|action\s+item:?\s*)/i, "")
+      .replace(/,\s*[A-Za-z]+\s*\?$/, "")
+      .trim();
+
+    if (clean.length > 3) {
+      clean = clean[0].toUpperCase() + clean.slice(1);
+    } else {
+      clean = text;
+    }
+
+    const deadlineMatch = text.match(/\bby\s+([a-zA-Z]+|\d{4}-\d{2}-\d{2})\b/i);
+
+    return {
+      classification: "TASK",
+      detectedTask: {
+        title: clean,
+        assignee,
+        priority: /(?:urgent|asap|blocker|today|critical)/i.test(text) ? "HIGH" : "MEDIUM",
+        deadline: deadlineMatch ? deadlineMatch[0] : undefined
+      }
+    };
+  }
+
+  // 2. Decision detection
+  if (/(?:decided|we decided|decision is|approved the|agreed to|we will go with|conclusion is|finalized that)\b/i.test(text)) {
+    return {
+      classification: "DECISION",
+      detectedDecision: {
+        title: text.length > 50 ? text.slice(0, 47) + "..." : text,
+        summary: text
+      }
+    };
+  }
+
+  // 3. Blocker detection
+  if (/(?:blocked on|waiting for|blocker|stuck because|cannot proceed|dependency issue|we are blocked)\b/i.test(text)) {
+    return { classification: "BLOCKER" };
+  }
+
+  // 4. Irrelevant / banter
+  if (/(?:hello everyone|hi all|good morning|see you guys|bye|thanks everyone)\b/i.test(text)) {
+    return { classification: "IRRELEVANT" };
+  }
+
+  // 5. Default
+  return { classification: "GENERAL_DISCUSSION" };
+}
+
 export default function LiveMeetingPage() {
   const router = useRouter();
   const [meetingTitle, setMeetingTitle] = useState("Live Execution Sync");
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [consentAcknowledged, setConsentAcknowledged] = useState(true);
-  const [captureTabAudio, setCaptureTabAudio] = useState(true);
+  const [captureTabAudio, setCaptureTabAudio] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcriptSegments, setTranscriptSegments] = useState<LiveSegment[]>([]);
   const [detectedTasks, setDetectedTasks] = useState<DetectedTask[]>([]);
@@ -81,52 +160,82 @@ export default function LiveMeetingPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const [speechActive, setSpeechActive] = useState(false);
+  const speechActiveRef = useRef(false);
 
   const startSpeechRecognition = () => {
     if (typeof window === "undefined") return;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      console.log("Web Speech API not available in this browser. You can type or paste segments manually.");
+      setErrorMessage("Web Speech API is not supported in this browser. Please use Chrome/Edge or inject segments with the quick buttons below.");
       return;
     }
 
     try {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch {}
+      }
+
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
       recognition.lang = "en-US";
 
+      recognition.onstart = () => {
+        setSpeechActive(true);
+        speechActiveRef.current = true;
+      };
+
       recognition.onresult = (event: any) => {
-        const lastIdx = event.results.length - 1;
-        const result = event.results[lastIdx];
-        if (result && result.isFinal) {
-          const transcriptText = result[0].transcript.trim();
-          if (transcriptText) {
-            sendTranscriptSegment(activeSpeakerRef.current || "Speaker", transcriptText);
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const result = event.results[i];
+          if (result && result.isFinal) {
+            const transcriptText = result[0].transcript.trim();
+            if (transcriptText) {
+              sendTranscriptSegment(activeSpeakerRef.current || "Speaker", transcriptText);
+            }
           }
         }
       };
 
       recognition.onerror = (event: any) => {
         console.warn("Speech recognition notice:", event.error);
+        if (event.error === "not-allowed") {
+          setErrorMessage("Microphone access denied for speech recognition. Please allow microphone in browser address bar.");
+          setSpeechActive(false);
+          speechActiveRef.current = false;
+        }
       };
 
       recognition.onend = () => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        if (speechActiveRef.current) {
           try {
             recognition.start();
-          } catch {}
+          } catch {
+            setTimeout(() => {
+              if (speechActiveRef.current) {
+                try { recognition.start(); } catch {}
+              }
+            }, 600);
+          }
+        } else {
+          setSpeechActive(false);
         }
       };
 
       recognition.start();
       recognitionRef.current = recognition;
-    } catch (e) {
-      console.warn("Speech recognition notice:", e);
+      setSpeechActive(true);
+      speechActiveRef.current = true;
+    } catch (e: any) {
+      console.warn("Speech recognition start notice:", e);
+      setErrorMessage("Speech recognition start notice: " + (e.message || String(e)));
     }
   };
 
   const stopSpeechRecognition = () => {
+    speechActiveRef.current = false;
+    setSpeechActive(false);
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -135,10 +244,17 @@ export default function LiveMeetingPage() {
     }
   };
 
+  const toggleSpeechRecognition = () => {
+    if (speechActive) {
+      stopSpeechRecognition();
+    } else {
+      startSpeechRecognition();
+    }
+  };
+
   const handleAudioChunk = (blob: Blob) => {
-    // When a 4-second audio chunk is generated:
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      // Send status or chunk marker
+      // Audio chunk hook
     }
   };
 
@@ -159,11 +275,14 @@ export default function LiveMeetingPage() {
 
   // Connect WebSocket when meeting starts
   const connectWebSocket = (mtgId: string) => {
-    let wsUrl = `wss://meetme-8r0u.onrender.com/ws/live-meeting/${mtgId}`;
-    if (process.env.NEXT_PUBLIC_WS_URL && process.env.NEXT_PUBLIC_WS_URL.trim() !== "") {
-      wsUrl = `${process.env.NEXT_PUBLIC_WS_URL.replace(/\/+$/, "")}/ws/live-meeting/${mtgId}`;
-    } else if (typeof window !== "undefined" && window.location.protocol === "http:" && window.location.hostname === "localhost" && process.env.NEXT_PUBLIC_API_URL?.includes("127.0.0.1")) {
-      wsUrl = `ws://127.0.0.1:8000/ws/live-meeting/${mtgId}`;
+    let wsUrl = `ws://localhost:8000/ws/live-meeting/${mtgId}`;
+    if (typeof window !== "undefined") {
+      const host = window.location.hostname;
+      if (host === "localhost" || host === "127.0.0.1") {
+        wsUrl = `ws://${host}:8000/ws/live-meeting/${mtgId}`;
+      } else if (process.env.NEXT_PUBLIC_WS_URL && process.env.NEXT_PUBLIC_WS_URL.trim() !== "") {
+        wsUrl = `${process.env.NEXT_PUBLIC_WS_URL.replace(/\/+$/, "")}/ws/live-meeting/${mtgId}`;
+      }
     }
 
     try {
@@ -178,18 +297,19 @@ export default function LiveMeetingPage() {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === "LIVE_TRANSCRIPT_SEGMENT") {
-            setTranscriptSegments((prev) => [
-              ...prev,
-              {
-                speaker: msg.speaker,
-                text: msg.text,
-                timestamp: msg.timestamp,
-                classification: msg.classification,
-              },
-            ]);
-
+            // Update / enrich detected tasks from backend
             if (msg.detected_task) {
-              setDetectedTasks((prev) => [...prev, msg.detected_task]);
+              setDetectedTasks((prev) => {
+                const matchIdx = prev.findIndex(
+                  (t) => t.title.toLowerCase() === msg.detected_task.title?.toLowerCase()
+                );
+                if (matchIdx >= 0) {
+                  const updated = [...prev];
+                  updated[matchIdx] = { ...updated[matchIdx], ...msg.detected_task };
+                  return updated;
+                }
+                return [...prev, msg.detected_task];
+              });
             }
             if (msg.detected_decision) {
               setDetectedDecisions((prev) => [...prev, msg.detected_decision]);
@@ -223,18 +343,30 @@ export default function LiveMeetingPage() {
     }
 
     try {
-      // 1. Create meeting in database
-      const created = await api.createMeeting(meetingTitle, "LIVE");
-      setMeetingId(created.id);
+      let createdId = meetingId;
+      if (!createdId) {
+        try {
+          const created = await api.createMeeting(meetingTitle, "LIVE");
+          createdId = created.id;
+          setMeetingId(createdId);
+        } catch {
+          createdId = `mtg-${Date.now()}`;
+          setMeetingId(createdId);
+        }
+      }
 
-      // 2. Start WebSocket
-      connectWebSocket(created.id);
+      // 1. Connect WebSocket
+      connectWebSocket(createdId);
 
-      // 3. Start Audio Capture (getDisplayMedia for Google Meet tab + getUserMedia)
-      await startCapture(captureTabAudio);
-
-      // 4. Start Real-time Speech-to-Text Recognition
+      // 2. Start Real-time Speech-to-Text Recognition immediately
       startSpeechRecognition();
+
+      // 3. Start Audio Capture (Microphone + optional tab audio)
+      try {
+        await startCapture(captureTabAudio);
+      } catch (audioErr: any) {
+        console.warn("Tab/Mic audio notice (Speech recognition is active):", audioErr.message);
+      }
 
     } catch (err: any) {
       console.error("Start meeting error:", err);
@@ -250,13 +382,11 @@ export default function LiveMeetingPage() {
     }
 
     if (meetingId) {
-      // Send all collected transcript lines to orchestrator for full task extraction and approvals
       const fullText = transcriptSegments
         .map((s) => `[${s.timestamp}] ${s.speaker}: ${s.text}`)
         .join("\n");
 
       try {
-        // Finalize and process the original meeting ID directly
         await api.processMeeting(meetingId, fullText);
         router.push("/approvals");
       } catch (err) {
@@ -266,10 +396,40 @@ export default function LiveMeetingPage() {
     }
   };
 
-  // Helper to send transcript chunk through WebSocket
+  // Helper to send transcript chunk through WebSocket with instant client-side keyword classification
   const sendTranscriptSegment = (speaker: string, text: string, timestamp?: string) => {
+    if (!text.trim()) return;
+    const ts = timestamp || formatDuration(audioState.durationSeconds);
+
+    // 1. Instant keyword-based categorization
+    const { classification, detectedTask, detectedDecision } = classifyLiveText(text);
+
+    // 2. Instant local UI update
+    setTranscriptSegments((prev) => [
+      ...prev,
+      {
+        speaker,
+        text,
+        timestamp: ts,
+        classification,
+      },
+    ]);
+
+    if (detectedTask) {
+      setDetectedTasks((prev) => {
+        if (prev.some((t) => t.title.toLowerCase() === detectedTask.title.toLowerCase())) {
+          return prev;
+        }
+        return [...prev, detectedTask];
+      });
+    }
+
+    if (detectedDecision) {
+      setDetectedDecisions((prev) => [...prev, detectedDecision]);
+    }
+
+    // 3. Forward to backend WebSocket if connected
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      const ts = timestamp || formatDuration(audioState.durationSeconds);
       wsRef.current.send(
         JSON.stringify({
           type: "TRANSCRIPT_CHUNK",
@@ -317,6 +477,21 @@ export default function LiveMeetingPage() {
 
         {/* Live Meeting Controls */}
         <div className="flex items-center gap-2">
+          {/* Real-time Speech-to-Text Toggle */}
+          <button
+            type="button"
+            onClick={toggleSpeechRecognition}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold border transition-all ${
+              speechActive
+                ? "bg-accent-neon/20 text-accent-neon border-accent-neon/50 shadow-sm"
+                : "bg-bg-card text-text-secondary border-border-subtle hover:border-border-strong hover:text-text-primary"
+            }`}
+            title="Toggle speech recognition"
+          >
+            <Mic size={14} className={speechActive ? "text-accent-neon animate-pulse" : "text-text-muted"} />
+            <span>{speechActive ? "🎙️ STT: Listening..." : "🎙️ STT: Start Speech"}</span>
+          </button>
+
           {!audioState.isRecording ? (
             <button
               onClick={handleStartMeeting}
@@ -549,8 +724,49 @@ export default function LiveMeetingPage() {
             <div ref={transcriptEndRef} />
           </div>
 
+          {/* Quick Response & Task Triggers Bar */}
+          <div className="p-2.5 bg-bg-secondary border-t border-border-subtle space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono font-bold text-accent-orange uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles size={12} /> Quick Responses & Task Triggers:
+              </span>
+              <span className="text-[9px] font-mono text-text-muted">Click to instantly test task categorization</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: "⚡ Rahul: Deploy frontend", text: "Rahul, please deploy the frontend by Friday", type: "task" },
+                { label: "⚡ Alex: Review PR", text: "Assigning this task to Alex: review the pull request", type: "task" },
+                { label: "⚡ Elena: Build migration", text: "Elena, can you please build the database migration?", type: "task" },
+                { label: "⚡ Marcus: Run QA tests", text: "Marcus, please run the end-to-end test suite today", type: "task" },
+                { label: "⚡ David: Load balancer", text: "David is assigned to configure the load balancer", type: "task" },
+                { label: "💬 Discussion: Roadmap", text: "Let's review the quarterly product roadmap and team bandwidth", type: "general" },
+                { label: "🎯 Decision: Groq engine", text: "We decided to use Groq for sub-second agent inference", type: "decision" },
+                { label: "🛑 Blocker: Credentials", text: "We are blocked waiting for deployment cloud credentials", type: "blocker" },
+              ].map((item, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    sendTranscriptSegment(activeSpeakerRef.current || "Speaker", item.text);
+                  }}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all ${
+                    item.type === "task"
+                      ? "bg-accent-orange/15 border-accent-orange/40 text-accent-orange hover:bg-accent-orange/25"
+                      : item.type === "decision"
+                      ? "bg-accent-neon/15 border-accent-neon/40 text-accent-neon hover:bg-accent-neon/25"
+                      : item.type === "blocker"
+                      ? "bg-red-500/15 border-red-500/40 text-red-400 hover:bg-red-500/25"
+                      : "bg-bg-card border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-strong"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Quick Speech / Transcript Segment Input */}
-          <form onSubmit={handleSendManual} className="p-3 border-t border-border-subtle bg-bg-secondary flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <form onSubmit={handleSendManual} className="p-3 border-t border-border-subtle bg-bg-card flex flex-wrap sm:flex-nowrap items-center gap-2">
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[11px] font-mono text-text-muted">Speaker:</span>
               {teamMembers.length > 0 ? (
@@ -578,13 +794,12 @@ export default function LiveMeetingPage() {
               type="text"
               value={manualInput}
               onChange={(e) => setManualInput(e.target.value)}
-              placeholder="Inject speech segment or transcribe chunk..."
-              className="flex-1 min-w-[200px] bg-bg-card border border-border-subtle rounded px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-orange"
+              placeholder="Type speech segment (e.g. 'Rahul, please deploy the backend')..."
+              className="flex-1 min-w-[200px] bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-orange"
             />
             <button
               type="submit"
-              disabled={!audioState.isRecording}
-              className="px-3 py-1.5 bg-bg-elevated border border-border-subtle hover:border-accent-orange text-xs text-text-primary rounded disabled:opacity-40 transition-colors"
+              className="px-3.5 py-1.5 bg-accent-orange text-black font-semibold hover:bg-accent-orange-hover text-xs rounded transition-colors shadow-sm"
             >
               Inject Segment
             </button>
