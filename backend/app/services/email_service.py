@@ -29,7 +29,7 @@ class GmailSMTPService:
 
     def test_connection(self) -> Dict[str, Any]:
         """
-        Tests the Gmail SMTP connection and authentication with STARTTLS.
+        Tests the Gmail SMTP connection and authentication with STARTTLS (587) or SSL (465).
         """
         if not self.is_configured:
             return {
@@ -38,15 +38,12 @@ class GmailSMTPService:
             }
 
         try:
-            with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as server:
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
-                server.login(self.email, self.password)
-                return {
-                    "success": True,
-                    "message": f"Successfully authenticated with Gmail SMTP server ({self.host}:{self.port})."
-                }
+            server = self._get_smtp_connection()
+            server.quit()
+            return {
+                "success": True,
+                "message": f"Successfully authenticated with Gmail SMTP server ({self.host})."
+            }
         except smtplib.SMTPAuthenticationError as auth_err:
             logger.error(f"Gmail SMTP Authentication Error: {auth_err}")
             return {
@@ -57,13 +54,7 @@ class GmailSMTPService:
             logger.error(f"Gmail SMTP Connection Error: {conn_err}")
             return {
                 "success": False,
-                "error": f"Connection failed to {self.host}:{self.port} - {str(conn_err)}"
-            }
-        except smtplib.SMTPException as smtp_err:
-            logger.error(f"Gmail SMTP Error: {smtp_err}")
-            return {
-                "success": False,
-                "error": f"SMTP Exception: {str(smtp_err)}"
+                "error": f"Connection failed to {self.host} on ports 587/465 - {str(conn_err)}"
             }
         except Exception as e:
             logger.error(f"Unexpected SMTP Error: {e}")
@@ -71,6 +62,34 @@ class GmailSMTPService:
                 "success": False,
                 "error": f"Unexpected error: {str(e)}"
             }
+
+    def _get_smtp_connection(self):
+        """
+        Attempts connection via port 587 (STARTTLS) or port 465 (SSL).
+        Gracefully tries both to ensure delivery on networks with port filtering.
+        """
+        ports_to_try = [self.port, 465 if self.port == 587 else 587]
+        last_err = None
+
+        for p in ports_to_try:
+            try:
+                if p == 465:
+                    server = smtplib.SMTP_SSL(self.host, 465, timeout=self.timeout)
+                    server.ehlo()
+                    server.login(self.email, self.password)
+                    return server
+                else:
+                    server = smtplib.SMTP(self.host, p, timeout=self.timeout)
+                    server.ehlo()
+                    server.starttls()
+                    server.ehlo()
+                    server.login(self.email, self.password)
+                    return server
+            except Exception as e:
+                last_err = e
+                continue
+
+        raise last_err or Exception("Failed to establish SMTP connection on ports 587/465.")
 
     async def send_email(
         self,
@@ -164,14 +183,16 @@ class GmailSMTPService:
 
             return result
 
-        # 4. Perform actual native SMTP STARTTLS delivery
+        # 4. Perform actual native SMTP delivery (tries 587 STARTTLS, falls back to 465 SSL)
         try:
-            with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as server:
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
-                server.login(self.email, self.password)
+            server = self._get_smtp_connection()
+            try:
                 server.send_message(msg)
+            finally:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
 
             logger.info(f"Gmail SMTP successfully delivered message {generated_msg_id} to {to}.")
             result = {
@@ -208,59 +229,24 @@ class GmailSMTPService:
         except smtplib.SMTPAuthenticationError as auth_err:
             err_msg = f"Gmail SMTP Authentication Failed: Invalid App Password or Email. Code {auth_err.smtp_code}"
             logger.error(err_msg)
-            return self._record_failure(db, workspace_id, to, recipient_name, subject, html, plain_text_content, email_type, task_ids, idempotency_key, generated_msg_id, err_msg)
+            return self._record_failure(err_msg)
 
         except (smtplib.SMTPConnectError, socket.timeout, socket.gaierror) as conn_err:
-            err_msg = f"Gmail SMTP Connection Timeout/Error connecting to {self.host}:{self.port}: {str(conn_err)}"
+            err_msg = f"Gmail SMTP Connection Timeout/Error connecting to {self.host}: {str(conn_err)}"
             logger.error(err_msg)
-            return self._record_failure(db, workspace_id, to, recipient_name, subject, html, plain_text_content, email_type, task_ids, idempotency_key, generated_msg_id, err_msg)
+            return self._record_failure(err_msg)
 
         except smtplib.SMTPException as smtp_err:
             err_msg = f"Gmail SMTP Protocol Error: {str(smtp_err)}"
             logger.error(err_msg)
-            return self._record_failure(db, workspace_id, to, recipient_name, subject, html, plain_text_content, email_type, task_ids, idempotency_key, generated_msg_id, err_msg)
+            return self._record_failure(err_msg)
 
         except Exception as e:
             err_msg = f"Unexpected error during Gmail SMTP send: {str(e)}"
             logger.error(err_msg)
-            return self._record_failure(db, workspace_id, to, recipient_name, subject, html, plain_text_content, email_type, task_ids, idempotency_key, generated_msg_id, err_msg)
+            return self._record_failure(err_msg)
 
-    async def _record_failure(
-        self,
-        db: Optional[AsyncSession],
-        workspace_id: Optional[str],
-        to: str,
-        recipient_name: Optional[str],
-        subject: str,
-        html: str,
-        plain_text: str,
-        email_type: str,
-        task_ids: List[str],
-        idempotency_key: Optional[str],
-        message_id: str,
-        error_message: str
-    ) -> Dict[str, Any]:
-        from backend.app.models.schema import EmailLog
-        if db and workspace_id:
-            log_entry = EmailLog(
-                workspace_id=workspace_id,
-                task_id=task_ids[0] if task_ids else None,
-                task_ids=task_ids,
-                recipient=recipient_name or to,
-                email_address=to,
-                email_type=email_type,
-                subject=subject,
-                body_html=html,
-                body_text=plain_text,
-                status="FAILED",
-                provider="Gmail SMTP",
-                message_id=message_id,
-                error_message=error_message,
-                idempotency_key=idempotency_key
-            )
-            db.add(log_entry)
-            await db.commit()
-
+    def _record_failure(self, error_message: str) -> Dict[str, Any]:
         return {
             "success": False,
             "status": "FAILED",
