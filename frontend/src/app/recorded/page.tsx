@@ -5,13 +5,6 @@ import { useRouter } from "next/navigation";
 import { Upload, FileAudio, FileText, CheckCircle2, AlertTriangle, ArrowRight, Loader2, Sparkles, Clipboard } from "lucide-react";
 import { api } from "@/lib/api";
 
-const SAMPLE_TRANSCRIPT = `[00:00:15] Sarah Chen: Let's do a fast sync on the release deliverables.
-[00:00:40] Rahul Sharma: I will complete the frontend responsive layout and cross-browser audio capture tests by November 27.
-[00:01:10] Elena Rostova: I will finalize the backend FastAPI orchestration pipeline and Gmail SMTP reminder worker by November 26.
-[00:01:45] Marcus Vance: I will develop the end-to-end integration test suite and WebSocket stress tests by November 28.
-[00:02:15] Sarah Chen: Perfect. I will assemble the executive demo walkthrough and documentation by November 29.
-[00:02:40] Sarah Chen: Also, we need someone to audit workspace security and API rate limit safeguards before release.`;
-
 export default function RecordedMeetingPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"upload" | "paste">("upload");
@@ -68,13 +61,6 @@ export default function RecordedMeetingPage() {
     setFile(selectedFile);
     if (!title) {
       setTitle(selectedFile.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " "));
-    }
-  };
-
-  const handleLoadSample = () => {
-    setPastedText(SAMPLE_TRANSCRIPT);
-    if (!title) {
-      setTitle("Sprint Architecture & Execution Sync");
     }
   };
 
@@ -207,21 +193,13 @@ export default function RecordedMeetingPage() {
                 <label className="text-xs font-semibold text-text-primary">
                   Meeting Dialogue / Notes
                 </label>
-                <button
-                  type="button"
-                  onClick={handleLoadSample}
-                  className="text-[11px] font-mono text-accent-orange hover:underline flex items-center gap-1"
-                >
-                  <Sparkles size={11} />
-                  <span>Load Sample Transcript</span>
-                </button>
               </div>
 
               <textarea
                 rows={10}
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
-                placeholder="Paste your meeting transcript or notes here...&#10;&#10;e.g.&#10;Sarah: Let's do a fast sync. Rahul, where are we on frontend?&#10;Rahul: I will complete the frontend responsive layout by November 27.&#10;Elena: I will implement the FastAPI backend and reminder worker by November 26."
+                placeholder="Paste meeting transcript or dialogue notes here...&#10;&#10;e.g.&#10;[00:00:15] Alex: Let's do a fast sync on project deliverables.&#10;[00:00:40] Sam: I will complete the frontend layout by Friday.&#10;[00:01:10] Taylor: I will finalize the backend API and send out the schema."
                 className="w-full bg-bg-elevated border border-border-subtle rounded p-3 text-xs text-text-primary font-mono focus:outline-none focus:border-accent-orange leading-relaxed"
               />
             </div>

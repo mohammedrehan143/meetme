@@ -17,52 +17,67 @@ async def get_analytics_metrics(
     workspace_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    ws_id = workspace_id or settings.DEFAULT_WORKSPACE_ID
     today_str = datetime.utcnow().strftime("%Y-%m-%d")
 
     # 1. Total Meetings
-    m_stmt = select(func.count(Meeting.id)).where(Meeting.workspace_id == ws_id)
+    m_stmt = select(func.count(Meeting.id))
+    if workspace_id:
+        m_stmt = m_stmt.where(Meeting.workspace_id == workspace_id)
     total_meetings = (await db.execute(m_stmt)).scalar() or 0
 
-    m_proc_stmt = select(func.count(Meeting.id)).where(Meeting.workspace_id == ws_id, Meeting.status == "COMPLETED")
+    m_proc_stmt = select(func.count(Meeting.id)).where(Meeting.status == "COMPLETED")
+    if workspace_id:
+        m_proc_stmt = m_proc_stmt.where(Meeting.workspace_id == workspace_id)
     meetings_processed = (await db.execute(m_proc_stmt)).scalar() or 0
 
     # 2. Tasks metrics
-    t_total_stmt = select(func.count(Task.id)).where(Task.workspace_id == ws_id)
+    t_total_stmt = select(func.count(Task.id))
+    if workspace_id:
+        t_total_stmt = t_total_stmt.where(Task.workspace_id == workspace_id)
     tasks_identified = (await db.execute(t_total_stmt)).scalar() or 0
 
-    t_comp_stmt = select(func.count(Task.id)).where(Task.workspace_id == ws_id, Task.status == "COMPLETED")
+    t_comp_stmt = select(func.count(Task.id)).where(Task.status == "COMPLETED")
+    if workspace_id:
+        t_comp_stmt = t_comp_stmt.where(Task.workspace_id == workspace_id)
     tasks_completed = (await db.execute(t_comp_stmt)).scalar() or 0
 
     t_overdue_stmt = select(func.count(Task.id)).where(
-        Task.workspace_id == ws_id,
         (Task.status == "OVERDUE") | ((Task.status.in_(["APPROVED", "ASSIGNED", "IN_PROGRESS"])) & (Task.deadline < today_str))
     )
+    if workspace_id:
+        t_overdue_stmt = t_overdue_stmt.where(Task.workspace_id == workspace_id)
     overdue_tasks = (await db.execute(t_overdue_stmt)).scalar() or 0
 
     # 3. Pending Approvals
-    app_stmt = select(func.count(Approval.id)).where(Approval.workspace_id == ws_id, Approval.status == "PENDING")
+    app_stmt = select(func.count(Approval.id)).where(Approval.status == "PENDING")
+    if workspace_id:
+        app_stmt = app_stmt.where(Approval.workspace_id == workspace_id)
     pending_approvals = (await db.execute(app_stmt)).scalar() or 0
 
     # 4. Emails sent
-    e_stmt = select(func.count(EmailLog.id)).where(EmailLog.workspace_id == ws_id, EmailLog.status.in_(["SENT", "QUEUED_LOCAL"]))
+    e_stmt = select(func.count(EmailLog.id)).where(EmailLog.status.in_(["SENT", "QUEUED_LOCAL"]))
+    if workspace_id:
+        e_stmt = e_stmt.where(EmailLog.workspace_id == workspace_id)
     emails_sent = (await db.execute(e_stmt)).scalar() or 0
 
     # 5. Upcoming Deadlines (within 7 days)
     seven_days = (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d")
     up_stmt = select(func.count(Task.id)).where(
-        Task.workspace_id == ws_id,
         Task.status.in_(["APPROVED", "ASSIGNED", "IN_PROGRESS", "AWAITING_APPROVAL"]),
         Task.deadline >= today_str,
         Task.deadline <= seven_days
     )
+    if workspace_id:
+        up_stmt = up_stmt.where(Task.workspace_id == workspace_id)
     upcoming_deadlines = (await db.execute(up_stmt)).scalar() or 0
 
     # 6. Completion rate
     completion_rate = round((tasks_completed / tasks_identified * 100), 1) if tasks_identified > 0 else 0.0
 
     # 7. Team workload distribution
-    members_stmt = select(WorkspaceMember).where(WorkspaceMember.workspace_id == ws_id)
+    members_stmt = select(WorkspaceMember)
+    if workspace_id:
+        members_stmt = members_stmt.where(WorkspaceMember.workspace_id == workspace_id)
     members = (await db.execute(members_stmt)).scalars().all()
     team_workload = []
     for m in members:

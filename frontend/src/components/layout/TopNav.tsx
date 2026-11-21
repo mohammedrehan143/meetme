@@ -9,12 +9,39 @@ export function TopNav() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [currentUser, setCurrentUser] = useState<{ name: string; title: string; initials: string }>({
+    name: "Workspace Member",
+    title: "Admin",
+    initials: "ME",
+  });
+  const [workspaceName, setWorkspaceName] = useState("MEETME Workspace");
 
   useEffect(() => {
     loadNotifications();
+    loadUserProfile();
     const interval = setInterval(loadNotifications, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const loadUserProfile = async () => {
+    try {
+      const team = await api.getTeam();
+      if (team && team.length > 0) {
+        const primary = team.find((m) => m.role === "admin") || team[0];
+        const names = primary.full_name.trim().split(/\s+/);
+        const initials = names.length > 1
+          ? `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase()
+          : primary.full_name.slice(0, 2).toUpperCase();
+        setCurrentUser({
+          name: primary.full_name,
+          title: primary.title || "Team Member",
+          initials,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const loadNotifications = async () => {
     try {
@@ -44,7 +71,7 @@ export function TopNav() {
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-bg-card border border-border-subtle text-xs font-medium text-text-primary cursor-pointer hover:border-border-strong transition-colors">
           <div className="w-2 h-2 rounded-full bg-accent-orange"></div>
-          <span>MEETME Core Engineering</span>
+          <span>{workspaceName}</span>
           <ChevronDown size={12} className="text-text-secondary" />
         </div>
       </div>
@@ -112,11 +139,11 @@ export function TopNav() {
         {/* User Profile */}
         <div className="flex items-center gap-2.5 pl-1">
           <div className="w-7 h-7 rounded bg-bg-elevated border border-border-subtle flex items-center justify-center font-mono text-xs font-semibold text-accent-orange">
-            SC
+            {currentUser.initials}
           </div>
           <div className="hidden sm:flex flex-col text-left">
-            <span className="text-xs font-medium text-text-primary leading-none">Sarah Chen</span>
-            <span className="text-[10px] font-mono text-text-muted">Head of Product</span>
+            <span className="text-xs font-medium text-text-primary leading-none">{currentUser.name}</span>
+            <span className="text-[10px] font-mono text-text-muted">{currentUser.title}</span>
           </div>
         </div>
       </div>

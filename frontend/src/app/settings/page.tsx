@@ -23,7 +23,6 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
-  const [seeding, setSeeding] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,22 +88,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSeedDemo = async () => {
-    if (!confirm("Reset and re-seed the demo workspace? This will ingest the demo meeting and re-run all AI agents.")) {
-      return;
-    }
-    setSeeding(true);
-    setMessage(null);
-    try {
-      const res = await api.seedDemo(true);
-      setMessage(`Demo workspace seeded successfully! Processed ${res.tasks_count} tasks and ${res.approvals_count} approvals.`);
-    } catch (err: any) {
-      alert(`Demo reset failed: ${err.message}`);
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Header */}
@@ -121,28 +104,6 @@ export default function SettingsPage() {
           <span>{message}</span>
         </div>
       )}
-
-      {/* Demo Seeding & Reset Section */}
-      <div className="p-5 rounded bg-bg-card border border-border-subtle space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
-              Executive Demo Workspace
-            </h3>
-            <p className="text-xs text-text-secondary mt-0.5">
-              Reset the local workspace and execute the full multi-agent pipeline with verified sample transcripts.
-            </p>
-          </div>
-          <button
-            onClick={handleSeedDemo}
-            disabled={seeding}
-            className="px-3.5 py-1.5 rounded text-xs font-semibold bg-bg-elevated border border-border-subtle hover:border-accent-orange text-text-primary flex items-center gap-2 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw size={13} className={seeding ? "animate-spin text-accent-orange" : ""} />
-            <span>{seeding ? "Executing Multi-Agent Pipeline..." : "Reset & Seed Demo"}</span>
-          </button>
-        </div>
-      </div>
 
       <form onSubmit={handleSaveSettings} className="space-y-6">
         {/* Groq Engine Settings */}

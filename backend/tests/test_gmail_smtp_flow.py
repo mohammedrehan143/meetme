@@ -424,7 +424,7 @@ async def run_all_tests():
         await reminder_worker.process_pending_reminders()
 
     async with AsyncSessionLocal() as db:
-        res = await db.execute(select(Reminder).where(Reminder.id == "rem-fail-test-1"))
+        res = await db.execute(select(Reminder).where(Reminder.id == fail_rem_id))
         r = res.scalar_one()
         assert r.retry_count >= 3
         assert r.status == "FAILED", f"Expected FAILED after 3 retries, got {r.status}"

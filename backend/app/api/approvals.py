@@ -34,8 +34,10 @@ async def list_approvals(
     status: Optional[str] = None, # PENDING, APPROVED, REJECTED
     db: AsyncSession = Depends(get_db)
 ):
-    ws_id = workspace_id or settings.DEFAULT_WORKSPACE_ID
-    query = select(Approval).where(Approval.workspace_id == ws_id)
+    if workspace_id:
+        query = select(Approval).where(Approval.workspace_id == workspace_id)
+    else:
+        query = select(Approval)
     if status:
         query = query.where(Approval.status == status)
     query = query.order_by(desc(Approval.created_at))

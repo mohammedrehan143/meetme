@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.core.config import settings
 from backend.app.core.database import init_db, AsyncSessionLocal
 from backend.app.services.reminder_worker import reminder_worker
-from backend.app.demo.seed_data import seed_demo_workspace
+from backend.app.models.schema import Workspace
 from backend.app.api import (
     meetings, live, tasks, approvals, emails, reminders, analytics, team, settings as app_settings
 )
@@ -36,9 +36,13 @@ async def lifespan(app: FastAPI):
     try:
         await init_db()
 
-        # Seed demo workspace if not seeded
+        # Ensure default workspace exists
         async with AsyncSessionLocal() as db:
-            await seed_demo_workspace(db=db, force=False)
+            from sqlalchemy import select
+            any_ws = (await db.execute(select(Workspace))).scalar_one_or_none()
+            if not any_ws:
+                db.add(Workspace(id="ws-default", name="MEETME Workspace", slug="default"))
+                await db.commit()
     except Exception as e:
         logger.error(f"Error during database initialization: {e}")
 

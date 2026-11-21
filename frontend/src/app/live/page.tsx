@@ -53,8 +53,30 @@ export default function LiveMeetingPage() {
   const [transcriptSegments, setTranscriptSegments] = useState<LiveSegment[]>([]);
   const [detectedTasks, setDetectedTasks] = useState<DetectedTask[]>([]);
   const [detectedDecisions, setDetectedDecisions] = useState<DetectedDecision[]>([]);
-  const [simulatedSpeakers] = useState(["Sarah Chen", "Rahul Sharma", "Elena Rostova", "Marcus Vance"]);
-  const [speakerIndex, setSpeakerIndex] = useState(0);
+  const [activeSpeaker, setActiveSpeaker] = useState("Speaker");
+  const [teamMembers, setTeamMembers] = useState<string[]>([]);
+  const activeSpeakerRef = useRef("Speaker");
+
+  useEffect(() => {
+    activeSpeakerRef.current = activeSpeaker;
+  }, [activeSpeaker]);
+
+  useEffect(() => {
+    const fetchTeam = async () => {
+      try {
+        const team = await api.getTeam();
+        if (team && team.length > 0) {
+          const names = team.map((m) => m.full_name);
+          setTeamMembers(names);
+          setActiveSpeaker(names[0]);
+          activeSpeakerRef.current = names[0];
+        }
+      } catch {
+        // ignore
+      }
+    };
+    fetchTeam();
+  }, []);
 
   const wsRef = useRef<WebSocket | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
@@ -80,9 +102,7 @@ export default function LiveMeetingPage() {
         if (result && result.isFinal) {
           const transcriptText = result[0].transcript.trim();
           if (transcriptText) {
-            const currentSpeaker = simulatedSpeakers[speakerIndex % simulatedSpeakers.length];
-            sendTranscriptSegment(currentSpeaker, transcriptText);
-            setSpeakerIndex((s) => s + 1);
+            sendTranscriptSegment(activeSpeakerRef.current || "Speaker", transcriptText);
           }
         }
       };
@@ -216,15 +236,6 @@ export default function LiveMeetingPage() {
       // 4. Start Real-time Speech-to-Text Recognition
       startSpeechRecognition();
 
-      // Seed initial greeting segment
-      setTimeout(() => {
-        sendTranscriptSegment(
-          "Sarah Chen",
-          "Meeting started. Let's align on sprint tasks and finalize assignments.",
-          "00:00:03"
-        );
-      }, 1500);
-
     } catch (err: any) {
       console.error("Start meeting error:", err);
       setErrorMessage(err.message || "Could not start meeting.");
@@ -278,10 +289,8 @@ export default function LiveMeetingPage() {
   const handleSendManual = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualInput.trim()) return;
-    const currentSpeaker = simulatedSpeakers[speakerIndex % simulatedSpeakers.length];
-    sendTranscriptSegment(currentSpeaker, manualInput.trim());
+    sendTranscriptSegment(activeSpeaker.trim() || "Speaker", manualInput.trim());
     setManualInput("");
-    setSpeakerIndex((s) => s + 1);
   };
 
   const formatDuration = (totalSeconds: number) => {
@@ -544,22 +553,42 @@ export default function LiveMeetingPage() {
             <div ref={transcriptEndRef} />
           </div>
 
-          {/* Live Simulated / Quick Speech Input */}
-          <form onSubmit={handleSendManual} className="p-3 border-t border-border-subtle bg-bg-secondary flex gap-2">
-            <div className="text-[11px] font-mono text-text-muted self-center shrink-0">
-              Speaker: <strong className="text-text-primary">{simulatedSpeakers[speakerIndex % simulatedSpeakers.length]}</strong>
+          {/* Quick Speech / Transcript Segment Input */}
+          <form onSubmit={handleSendManual} className="p-3 border-t border-border-subtle bg-bg-secondary flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[11px] font-mono text-text-muted">Speaker:</span>
+              {teamMembers.length > 0 ? (
+                <select
+                  value={activeSpeaker}
+                  onChange={(e) => setActiveSpeaker(e.target.value)}
+                  className="bg-bg-card border border-border-subtle rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+                >
+                  {teamMembers.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                  <option value="Speaker">Other Speaker</option>
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={activeSpeaker}
+                  onChange={(e) => setActiveSpeaker(e.target.value)}
+                  placeholder="Speaker"
+                  className="w-24 bg-bg-card border border-border-subtle rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+                />
+              )}
             </div>
             <input
               type="text"
               value={manualInput}
               onChange={(e) => setManualInput(e.target.value)}
               placeholder="Inject speech segment or transcribe chunk..."
-              className="flex-1 bg-bg-card border border-border-subtle rounded px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-orange"
+              className="flex-1 min-w-[200px] bg-bg-card border border-border-subtle rounded px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent-orange"
             />
             <button
               type="submit"
               disabled={!audioState.isRecording}
-              className="px-3 py-1.5 bg-bg-elevated border border-border-subtle hover:border-accent-orange text-xs text-text-primary rounded disabled:opacity-40"
+              className="px-3 py-1.5 bg-bg-elevated border border-border-subtle hover:border-accent-orange text-xs text-text-primary rounded disabled:opacity-40 transition-colors"
             >
               Inject Segment
             </button>

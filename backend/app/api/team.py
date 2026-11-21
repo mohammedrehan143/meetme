@@ -28,8 +28,10 @@ async def list_members(
     workspace_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    ws_id = workspace_id or settings.DEFAULT_WORKSPACE_ID
-    stmt = select(WorkspaceMember).where(WorkspaceMember.workspace_id == ws_id)
+    if workspace_id:
+        stmt = select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_id)
+    else:
+        stmt = select(WorkspaceMember)
     res = await db.execute(stmt)
     members = res.scalars().all()
 
@@ -59,6 +61,18 @@ async def create_member(
     db: AsyncSession = Depends(get_db)
 ):
     ws_id = payload.workspace_id or settings.DEFAULT_WORKSPACE_ID
+
+    # Ensure workspace exists
+    from backend.app.models.schema import Workspace
+    ws_check = await db.execute(select(Workspace).where(Workspace.id == ws_id))
+    if not ws_check.scalar_one_or_none():
+        any_ws = (await db.execute(select(Workspace).limit(1))).scalar_one_or_none()
+        if any_ws:
+            ws_id = any_ws.id
+        else:
+            ws = Workspace(id=ws_id, name="MEETME Workspace", slug="default")
+            db.add(ws)
+            await db.flush()
 
     # Check for existing email in workspace
     check_stmt = select(WorkspaceMember).where(

@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     APP_FRONTEND_URL: str = os.getenv("APP_FRONTEND_URL", "http://localhost:3000")
     
     # Defaults
-    DEFAULT_WORKSPACE_ID: str = "ws-demo-001"
-    DEFAULT_USER_ID: str = "usr-alex-001"
+    DEFAULT_WORKSPACE_ID: str = os.getenv("DEFAULT_WORKSPACE_ID", "ws-default")
+    DEFAULT_USER_ID: str = os.getenv("DEFAULT_USER_ID", "usr-user-001")
     
     class Config:
         env_file = ".env"

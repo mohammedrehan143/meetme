@@ -30,8 +30,10 @@ async def list_tasks(
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    ws_id = workspace_id or settings.DEFAULT_WORKSPACE_ID
-    query = select(Task).where(Task.workspace_id == ws_id)
+    if workspace_id:
+        query = select(Task).where(Task.workspace_id == workspace_id)
+    else:
+        query = select(Task)
 
     if status and status != "ALL":
         query = query.where(Task.status == status)
