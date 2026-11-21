@@ -743,47 +743,6 @@ export default function LiveMeetingPage() {
             <div ref={transcriptEndRef} />
           </div>
 
-          {/* Quick Response & Task Triggers Bar */}
-          <div className="p-2.5 bg-bg-secondary border-t border-border-subtle space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono font-bold text-accent-orange uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={12} /> Quick Responses & Task Triggers:
-              </span>
-              <span className="text-[9px] font-mono text-text-muted">Click to instantly test task categorization</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { label: "⚡ Rahul: Deploy frontend", text: "Rahul, please deploy the frontend by Friday", type: "task" },
-                { label: "⚡ Alex: Review PR", text: "Assigning this task to Alex: review the pull request", type: "task" },
-                { label: "⚡ Elena: Build migration", text: "Elena, can you please build the database migration?", type: "task" },
-                { label: "⚡ Marcus: Run QA tests", text: "Marcus, please run the end-to-end test suite today", type: "task" },
-                { label: "⚡ David: Load balancer", text: "David is assigned to configure the load balancer", type: "task" },
-                { label: "💬 Discussion: Roadmap", text: "Let's review the quarterly product roadmap and team bandwidth", type: "general" },
-                { label: "🎯 Decision: Groq engine", text: "We decided to use Groq for sub-second agent inference", type: "decision" },
-                { label: "🛑 Blocker: Credentials", text: "We are blocked waiting for deployment cloud credentials", type: "blocker" },
-              ].map((item, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => {
-                    sendTranscriptSegment(activeSpeakerRef.current || "Speaker", item.text);
-                  }}
-                  className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all ${
-                    item.type === "task"
-                      ? "bg-accent-orange/15 border-accent-orange/40 text-accent-orange hover:bg-accent-orange/25"
-                      : item.type === "decision"
-                      ? "bg-accent-neon/15 border-accent-neon/40 text-accent-neon hover:bg-accent-neon/25"
-                      : item.type === "blocker"
-                      ? "bg-red-500/15 border-red-500/40 text-red-400 hover:bg-red-500/25"
-                      : "bg-bg-card border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-strong"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Quick Speech / Transcript Segment Input */}
           <form onSubmit={handleSendManual} className="p-3 border-t border-border-subtle bg-bg-card flex flex-wrap sm:flex-nowrap items-center gap-2">
             <div className="flex items-center gap-1.5 shrink-0">
