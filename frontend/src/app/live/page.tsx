@@ -127,7 +127,7 @@ export default function LiveMeetingPage() {
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [consentAcknowledged, setConsentAcknowledged] = useState(true);
-  const [captureTabAudio, setCaptureTabAudio] = useState(false);
+  const [captureTabAudio, setCaptureTabAudio] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcriptSegments, setTranscriptSegments] = useState<LiveSegment[]>([]);
   const [detectedTasks, setDetectedTasks] = useState<DetectedTask[]>([]);
@@ -253,8 +253,27 @@ export default function LiveMeetingPage() {
   };
 
   const handleAudioChunk = (blob: Blob) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      // Audio chunk hook
+    // Transmit tab & mixed audio chunk (when user wears earphones and shares Google Meet tab)
+    if (blob && blob.size > 1000 && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Data = (reader.result as string)?.split(",")[1];
+          if (base64Data && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "AUDIO_CHUNK",
+                speaker: activeSpeakerRef.current || "Speaker",
+                timestamp: formatDuration(audioState.durationSeconds),
+                audio_data: base64Data,
+              })
+            );
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        console.warn("Could not encode audio chunk:", e);
+      }
     }
   };
 

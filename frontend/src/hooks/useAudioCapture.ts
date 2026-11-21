@@ -73,8 +73,12 @@ export function useAudioCapture(onAudioChunk?: (blob: Blob) => void) {
           if (audioTracks.length > 0) {
             hasTab = true;
             tabStreamRef.current = tabStream;
-            // Stop video tracks immediately so we only stream audio without wasting CPU/GPU
-            tabStream.getVideoTracks().forEach((track) => track.stop());
+            // Listen for user clicking "Stop sharing" in Chrome
+            tabStream.getVideoTracks().forEach((track) => {
+              track.onended = () => {
+                console.log("Tab audio sharing ended by user");
+              };
+            });
           } else {
             console.warn("No audio track detected in screen/tab capture. User may have forgotten 'Share tab audio'.");
           }
