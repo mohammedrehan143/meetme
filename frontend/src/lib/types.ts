@@ -63,27 +63,12 @@ export interface TranscriptSegment {
 
 export interface Approval {
   id: string;
-  task_id: string;
+  task_id?: string;
   meeting_id?: string;
+  action_category?: "TASK_EXECUTION" | "EMAIL_DISPATCH" | "JIRA_ISSUE_CREATE" | "GITHUB_ISSUE_CREATE" | "DECISION_RESOLUTION";
+  target_platform?: "INTERNAL" | "EMAIL" | "JIRA" | "GITHUB";
   status: "PENDING" | "APPROVED" | "REJECTED" | "MODIFIED";
-  proposed_payload: {
-    title: string;
-    description?: string;
-    assignee_id?: string;
-    assignee_name?: string;
-    assignee_email?: string;
-    deadline?: string;
-    priority: Priority;
-    confidence: number;
-    evidence_quote?: string;
-    email_content?: {
-      subject: string;
-      html: string;
-      text: string;
-    };
-    meeting_title?: string;
-    requires_clarification?: boolean;
-  };
+  proposed_payload: any;
   approved_payload?: any;
   approved_recipient?: string;
   approval_notes?: string;
@@ -182,3 +167,100 @@ export interface AnalyticsData {
     message: string;
   }>;
 }
+
+export interface Decision {
+  id: string;
+  workspace_id?: string;
+  project_id?: string;
+  meeting_id?: string;
+  title: string;
+  category: "TECHNICAL" | "PRODUCT" | "ORGANIZATIONAL" | "REQUIREMENT";
+  description: string;
+  decided_by?: string;
+  date?: string;
+  status: "ACTIVE" | "SUPERSEDED" | "PROPOSED" | "REVERTED";
+  superseded_by_id?: string;
+  confidence: number;
+  source_transcript_quote?: string;
+  created_at: string;
+}
+
+export interface Commitment {
+  id: string;
+  workspace_id?: string;
+  project_id?: string;
+  meeting_id?: string;
+  assignee_id?: string;
+  assignee_name?: string;
+  description: string;
+  deadline?: string;
+  original_deadline?: string;
+  status: "OPEN" | "IN_PROGRESS" | "COMPLETED" | "DELAYED" | "OVERDUE" | "CANCELLED";
+  delay_count: number;
+  unresolved_blockers?: string;
+  completion_evidence?: string;
+  confidence: number;
+  created_at: string;
+}
+
+export interface DecisionConflict {
+  id: string;
+  workspace_id?: string;
+  previous_decision_id: string;
+  new_decision_id: string;
+  conflict_type: "DIRECT_CONTRADICTION" | "TECHNICAL_REVERSAL" | "REQUIREMENT_CONFLICT" | "DEADLINE_SHIFT" | "REFINEMENT";
+  explanation: string;
+  confidence: number;
+  suggested_resolution?: string;
+  status: "DETECTED" | "ACCEPTED_NEW" | "RETAINED_PREVIOUS" | "MANUAL_EDIT" | "UNRESOLVED";
+  previous_decision?: Decision;
+  new_decision?: Decision;
+  created_at: string;
+}
+
+export interface ExternalIntegration {
+  platform: "JIRA" | "GITHUB";
+  is_connected: boolean;
+  account_name?: string;
+  project_or_repo?: string;
+  base_url?: string;
+  last_sync_at?: string;
+}
+
+export interface ExternalIssueSync {
+  id: string;
+  task_id: string;
+  platform: "JIRA" | "GITHUB";
+  external_id: string;
+  external_key: string;
+  external_url: string;
+  status: string;
+  last_synced_at: string;
+  created_at: string;
+}
+
+export interface WeeklyDigest {
+  id: string;
+  member_id: string;
+  member_name: string;
+  member_email: string;
+  period_start: string;
+  period_end: string;
+  metrics: {
+    assigned_count: number;
+    completed_count: number;
+    in_progress_count: number;
+    overdue_count: number;
+    upcoming_deadlines_count: number;
+  };
+  tasks_summary: Array<{
+    title: string;
+    status: string;
+    priority: string;
+    deadline?: string;
+  }>;
+  status: "GENERATED" | "SENT" | "FAILED";
+  email_sent_at?: string;
+  created_at: string;
+}
+

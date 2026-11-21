@@ -197,5 +197,75 @@ export const api = {
   },
   async markNotificationRead(id: string): Promise<any> {
     return fetchJson(`${API_BASE}/notifications/${id}/read`, { method: "POST" });
+  },
+
+  // Cross-Meeting Memory Engine
+  async getDecisions(params?: { status?: string; category?: string; search?: string }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.status) query.append("status", params.status);
+    if (params?.category) query.append("category", params.category);
+    if (params?.search) query.append("search", params.search);
+    return fetchJson<any[]>(`${API_BASE}/memory/decisions?${query.toString()}`);
+  },
+  async getCommitments(params?: { status?: string; assignee_name?: string; is_delayed?: boolean }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.status) query.append("status", params.status);
+    if (params?.assignee_name) query.append("assignee_name", params.assignee_name);
+    if (params?.is_delayed !== undefined) query.append("is_delayed", String(params.is_delayed));
+    return fetchJson<any[]>(`${API_BASE}/memory/commitments?${query.toString()}`);
+  },
+  async getConflicts(status?: string): Promise<any[]> {
+    const query = status ? `?status=${status}` : "";
+    return fetchJson<any[]>(`${API_BASE}/memory/conflicts${query}`);
+  },
+  async resolveConflict(conflictId: string, action: string, notes?: string, customDecisionPayload?: any): Promise<any> {
+    return fetchJson(`${API_BASE}/memory/conflicts/${conflictId}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ action, notes, custom_decision_payload: customDecisionPayload })
+    });
+  },
+
+  // External Integrations (Jira & GitHub)
+  async getIntegrations(): Promise<any> {
+    return fetchJson(`${API_BASE}/integrations`);
+  },
+  async connectJira(data: { domain: string; email: string; api_token: string; project_key?: string; issue_type?: string }): Promise<any> {
+    return fetchJson(`${API_BASE}/integrations/jira/connect`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  },
+  async disconnectJira(): Promise<any> {
+    return fetchJson(`${API_BASE}/integrations/jira/disconnect`, { method: "POST" });
+  },
+  async connectGitHub(data: { token: string; repo: string }): Promise<any> {
+    return fetchJson(`${API_BASE}/integrations/github/connect`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  },
+  async disconnectGitHub(): Promise<any> {
+    return fetchJson(`${API_BASE}/integrations/github/disconnect`, { method: "POST" });
+  },
+  async getIntegrationActivity(): Promise<any[]> {
+    return fetchJson<any[]>(`${API_BASE}/integrations/activity`);
+  },
+
+  // Personalized Weekly Digest
+  async getDigests(memberId?: string): Promise<any[]> {
+    const query = memberId ? `?member_id=${memberId}` : "";
+    return fetchJson<any[]>(`${API_BASE}/digest${query}`);
+  },
+  async getDigest(digestId: string): Promise<any> {
+    return fetchJson(`${API_BASE}/digest/${digestId}`);
+  },
+  async generateDigests(data: { member_id?: string; period_days?: number; dispatch_email_now?: boolean }): Promise<any> {
+    return fetchJson(`${API_BASE}/digest/generate`, {
+      method: "POST",
+      body: JSON.stringify(data)
+    });
+  },
+  async sendDigest(digestId: string): Promise<any> {
+    return fetchJson(`${API_BASE}/digest/${digestId}/send`, { method: "POST" });
   }
 };

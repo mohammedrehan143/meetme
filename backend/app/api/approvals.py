@@ -56,6 +56,8 @@ async def list_approvals(
             "id": app.id,
             "task_id": app.task_id,
             "meeting_id": app.meeting_id,
+            "action_category": getattr(app, "action_category", "TASK_EXECUTION"),
+            "target_platform": getattr(app, "target_platform", "EMAIL"),
             "status": app.status,
             "proposed_payload": app.proposed_payload,
             "approved_payload": app.approved_payload,

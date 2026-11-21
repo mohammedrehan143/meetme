@@ -14,6 +14,8 @@ from backend.app.agents.assignment_agent import assignment_agent
 from backend.app.agents.decision_agent import decision_agent
 from backend.app.agents.risk_agent import risk_agent
 from backend.app.agents.email_agent import email_agent
+from backend.app.services.memory_service import memory_service
+from backend.app.services.conflict_service import conflict_service
 
 logger = logging.getLogger("meetme.orchestrator")
 
@@ -77,8 +79,30 @@ class OrchestratorAgent:
         # Step 3: Assignment Agent
         assigned_tasks = assignment_agent.match_assignments(raw_tasks, members_dict)
 
-        # Step 4: Decision & Risk Agents
-        decisions_data = await decision_agent.extract_decisions(transcript_text)
+        # Step 4: Cross-Meeting Memory Engine & Conflict Detection
+        memory_data = await memory_service.extract_memories(transcript_text, context=meeting.title)
+        extracted_decisions = memory_data.get("decisions", [])
+        extracted_commitments = memory_data.get("commitments", [])
+
+        # Detect decision conflicts against previous meetings
+        detected_conflicts = await conflict_service.detect_conflicts(
+            db=db,
+            workspace_id=workspace_id,
+            current_meeting_id=meeting_id,
+            new_decisions=extracted_decisions
+        )
+
+        # Persist memory decisions & track cross-meeting commitments
+        persisted_memory = await memory_service.persist_meeting_memories(
+            db=db,
+            workspace_id=workspace_id,
+            meeting_id=meeting_id,
+            decisions=extracted_decisions,
+            commitments=extracted_commitments,
+            members=members_dict
+        )
+
+        # Step 4b: Risk & Blocker Analysis
         risks_data = await risk_agent.analyze_risks(transcript_text, assigned_tasks)
 
         # Step 5: Persist Tasks & Create Mandatory Approvals
@@ -134,6 +158,8 @@ class OrchestratorAgent:
                 workspace_id=workspace_id,
                 task_id=task_obj.id,
                 meeting_id=meeting_id,
+                action_category="EMAIL_DISPATCH",
+                target_platform="EMAIL",
                 status="PENDING",
                 proposed_payload={
                     "title": task_obj.title,
@@ -155,11 +181,12 @@ class OrchestratorAgent:
             created_approvals.append(approval)
 
         # Step 6: Generate Executive Summary & Update Meeting Record
-        decisions_list = decisions_data.get("decisions", [])
+        decisions_list = extracted_decisions
         blockers_list = risks_data.get("blockers", [])
 
         summary_points = [
             f"Extracted {len(created_tasks)} actionable items and {len(decisions_list)} key architectural decisions.",
+            f"Detected {len(detected_conflicts)} decision conflict(s) requiring resolution." if detected_conflicts else "No contradictions with historical decisions.",
             f"Identified {len(blockers_list)} operational blocker(s)." if blockers_list else "No active blockers identified.",
             f"All action items routed to the Approval Center pending human authorization."
         ]

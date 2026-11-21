@@ -130,9 +130,11 @@ class Approval(Base):
     
     id = Column(String(36), primary_key=True, default=generate_uuid)
     workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
-    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=False, index=True)
+    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=True, index=True)
     meeting_id = Column(String(36), ForeignKey("meetings.id"), nullable=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    action_category = Column(String(50), default="EMAIL_DISPATCH") # EMAIL_DISPATCH, JIRA_ISSUE_CREATE, GITHUB_ISSUE_CREATE, SLACK_NOTIFICATION, DECISION_RESOLUTION
+    target_platform = Column(String(50), default="EMAIL") # EMAIL, JIRA, GITHUB, SLACK
     proposed_payload = Column(JSON, nullable=False)
     approved_payload = Column(JSON, nullable=True)
     status = Column(String(50), default="PENDING") # PENDING, APPROVED, REJECTED, MODIFIED
@@ -225,4 +227,162 @@ class Notification(Base):
     type = Column(String(50), default="INFO") # INFO, WARNING, SUCCESS, ACTION_REQUIRED
     link = Column(String(500), nullable=True)
     is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Project(Base):
+    __tablename__ = "projects"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    key = Column(String(50), nullable=False, default="PROJ") # e.g. PROJ, ENG
+    description = Column(Text, nullable=True)
+    status = Column(String(50), default="ACTIVE")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Decision(Base):
+    __tablename__ = "decisions"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=True, index=True)
+    meeting_id = Column(String(36), ForeignKey("meetings.id"), nullable=True, index=True)
+    title = Column(String(255), nullable=False)
+    summary = Column(Text, nullable=False)
+    context = Column(Text, nullable=True)
+    category = Column(String(50), default="TECHNICAL") # TECHNICAL, ARCHITECTURE, PRODUCT, PROCESS, TIMELINE
+    status = Column(String(50), default="ACTIVE") # ACTIVE, SUPERSEDED, CONFLICTED, OBSOLETE
+    decided_by_name = Column(String(255), nullable=True)
+    decided_by_id = Column(String(36), nullable=True)
+    evidence_quote = Column(Text, nullable=True)
+    superseded_by_id = Column(String(36), ForeignKey("decisions.id"), nullable=True)
+    confidence = Column(Float, default=0.90)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Commitment(Base):
+    __tablename__ = "commitments"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    project_id = Column(String(36), ForeignKey("projects.id"), nullable=True, index=True)
+    meeting_id = Column(String(36), ForeignKey("meetings.id"), nullable=True, index=True)
+    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=True, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    assignee_id = Column(String(36), ForeignKey("workspace_members.id"), nullable=True)
+    assignee_name = Column(String(255), nullable=False)
+    assignee_email = Column(String(255), nullable=False)
+    original_deadline = Column(String(50), nullable=True)
+    current_deadline = Column(String(50), nullable=True)
+    status = Column(String(50), default="IN_PROGRESS") # PENDING, IN_PROGRESS, COMPLETED, OVERDUE, DELAYED
+    delay_count = Column(Integer, default=0)
+    blockers = Column(JSON, default=list)
+    completion_evidence = Column(Text, nullable=True)
+    related_meeting_ids = Column(JSON, default=list)
+    confidence = Column(Float, default=0.90)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class DecisionConflict(Base):
+    __tablename__ = "decision_conflicts"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    previous_decision_id = Column(String(36), ForeignKey("decisions.id"), nullable=True, index=True)
+    new_decision_id = Column(String(36), ForeignKey("decisions.id"), nullable=True, index=True)
+    previous_meeting_id = Column(String(36), ForeignKey("meetings.id"), nullable=True)
+    new_meeting_id = Column(String(36), ForeignKey("meetings.id"), nullable=True)
+    conflict_type = Column(String(50), default="DIRECT_CONTRADICTION") 
+    # DIRECT_CONTRADICTION, TECHNICAL_REVERSAL, REQUIREMENT_CONFLICT, DEADLINE_CHANGE, REFINEMENT
+    explanation = Column(Text, nullable=False)
+    confidence = Column(Float, default=0.90)
+    suggested_resolution = Column(Text, nullable=True)
+    status = Column(String(50), default="UNRESOLVED") # UNRESOLVED, ACCEPTED_NEW, RETAINED_PREVIOUS, MANUAL_EDIT
+    source_evidence_prev = Column(Text, nullable=True)
+    source_evidence_new = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class DecisionResolution(Base):
+    __tablename__ = "decision_resolutions"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    conflict_id = Column(String(36), ForeignKey("decision_conflicts.id"), nullable=False, index=True)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    resolved_by_user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    action_taken = Column(String(50), nullable=False) # ACCEPT_NEW, RETAIN_PREVIOUS, MANUAL_EDIT, MARK_UNRESOLVED
+    resolution_notes = Column(Text, nullable=True)
+    resolved_at = Column(DateTime, default=datetime.utcnow)
+
+class MemoryRelationship(Base):
+    __tablename__ = "memory_relationships"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    source_type = Column(String(50), nullable=False) # DECISION, COMMITMENT, TASK, MEETING
+    source_id = Column(String(36), nullable=False, index=True)
+    target_type = Column(String(50), nullable=False)
+    target_id = Column(String(36), nullable=False, index=True)
+    relationship_type = Column(String(50), nullable=False) # SUPERSEDES, DEPENDS_ON, CONFLICTS_WITH, DERIVED_FROM, REFINES
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class MemoryEmbedding(Base):
+    __tablename__ = "memory_embeddings"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    memory_type = Column(String(50), nullable=False) # DECISION, COMMITMENT, TRANSCRIPT
+    memory_id = Column(String(36), nullable=False, index=True)
+    content_text = Column(Text, nullable=False)
+    embedding_vector = Column(JSON, nullable=True) # Float list vector for cosine similarity search
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ExternalIntegration(Base):
+    __tablename__ = "external_integrations"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    provider = Column(String(50), nullable=False) # JIRA, GITHUB, SLACK
+    is_active = Column(Boolean, default=False)
+    credentials_encrypted = Column(JSON, default=dict) # e.g. api_token, domain, email, pat
+    config = Column(JSON, default=dict) # e.g. project_key, repo_name, issue_type, labels
+    last_sync_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ExternalIssueSync(Base):
+    __tablename__ = "external_issue_syncs"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=True, index=True)
+    approval_id = Column(String(36), ForeignKey("approvals.id"), nullable=True, index=True)
+    provider = Column(String(50), nullable=False) # JIRA, GITHUB
+    external_id = Column(String(255), nullable=True)
+    external_key_or_number = Column(String(255), nullable=True) # e.g. PROJ-101 or #42
+    external_url = Column(String(500), nullable=True)
+    title = Column(String(255), nullable=False)
+    status = Column(String(50), default="CREATED") # CREATED, SYNCED, CLOSED, FAILED
+    idempotency_key = Column(String(255), nullable=True, index=True)
+    error_message = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class WeeklyDigest(Base):
+    __tablename__ = "weekly_digests"
+    
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    member_id = Column(String(36), ForeignKey("workspace_members.id"), nullable=True, index=True)
+    recipient_email = Column(String(255), nullable=False, index=True)
+    recipient_name = Column(String(255), default="Team Member")
+    period_start = Column(DateTime, nullable=False)
+    period_end = Column(DateTime, nullable=False)
+    content_json = Column(JSON, default=dict)
+    html_body = Column(Text, nullable=False)
+    status = Column(String(50), default="GENERATED") # GENERATED, SENT, FAILED
+    sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

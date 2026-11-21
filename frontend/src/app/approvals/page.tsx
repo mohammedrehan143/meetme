@@ -309,6 +309,95 @@ export default function ApprovalsPage() {
               const isSelected = selectedIds.includes(app.id);
               const isPending = app.status === "PENDING";
               const isLowConfidence = (p.confidence || 0.9) < 0.75 || p.requires_clarification;
+              const isDecisionConflict = app.action_category === "DECISION_RESOLUTION";
+
+              // Specialized card for DECISION CONFLICT approvals
+              if (isDecisionConflict) {
+                return (
+                  <div
+                    key={app.id}
+                    className={`p-4 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 border-l-4 ${
+                      isPending ? "border-l-accent-orange bg-accent-orange/5" : "border-l-border-subtle hover:bg-bg-elevated/40"
+                    }`}
+                  >
+                    <div className="space-y-2 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 text-[9px] font-mono font-bold rounded bg-accent-orange text-black">
+                          DECISION CONFLICT
+                        </span>
+                        <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold rounded bg-bg-elevated text-text-secondary border border-border-subtle">
+                          {p.conflict_type || "CONTRADICTION"}
+                        </span>
+                        <span className={`px-1.5 py-0.5 text-[9px] font-mono font-bold rounded ${
+                          app.status === "APPROVED" ? "bg-accent-neon/20 text-accent-neon" :
+                          app.status === "REJECTED" ? "bg-red-500/20 text-red-400" :
+                          "bg-bg-elevated text-text-secondary"
+                        }`}>
+                          {app.status}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs pt-1">
+                        <div className="p-2.5 bg-bg-elevated/50 rounded border border-border-subtle">
+                          <span className="text-[10px] font-mono text-text-muted uppercase block">Previous Consensus</span>
+                          <strong className="text-text-primary text-xs block">{p.previous_decision?.title || "Previous Decision"}</strong>
+                          <p className="text-text-secondary text-[11px] mt-0.5">{p.previous_decision?.summary}</p>
+                        </div>
+                        <div className="p-2.5 bg-accent-orange/10 rounded border border-accent-orange/30">
+                          <span className="text-[10px] font-mono text-accent-orange uppercase block">New Conflicting Statement</span>
+                          <strong className="text-text-primary text-xs block">{p.new_decision?.title || "New Proposed Direction"}</strong>
+                          <p className="text-text-secondary text-[11px] mt-0.5">{p.new_decision?.summary}</p>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-text-secondary font-mono">
+                        <strong className="text-accent-orange">AI Analysis: </strong>{p.explanation}
+                      </p>
+                    </div>
+
+                    {isPending && (
+                      <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                        <button
+                          onClick={async () => {
+                            setExecuting(true);
+                            try {
+                              await api.approveAction(app.id, { action: "RETAIN_PREVIOUS" }, "Retained previous decision");
+                              await loadApprovals();
+                            } catch (err: any) {
+                              alert(`Execution failed: ${err.message}`);
+                            } finally {
+                              setExecuting(false);
+                            }
+                          }}
+                          disabled={executing}
+                          className="px-3 py-1.5 text-xs font-semibold rounded bg-bg-elevated border border-border-subtle hover:border-border-strong text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+                        >
+                          <span>Retain Previous</span>
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            setExecuting(true);
+                            try {
+                              await api.approveAction(app.id, { action: "ACCEPT_NEW" }, "Accepted new decision (superseded previous)");
+                              await loadApprovals();
+                            } catch (err: any) {
+                              alert(`Execution failed: ${err.message}`);
+                            } finally {
+                              setExecuting(false);
+                            }
+                          }}
+                          disabled={executing}
+                          className="px-3.5 py-1.5 text-xs font-semibold rounded bg-accent-orange text-black hover:bg-accent-orange-hover flex items-center gap-1 transition-colors disabled:opacity-50"
+                        >
+                          <Check size={12} />
+                          <span>Accept New (Supersede)</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
 
               return (
                 <div

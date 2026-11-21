@@ -19,7 +19,8 @@ from backend.app.core.database import init_db, AsyncSessionLocal
 from backend.app.services.reminder_worker import reminder_worker
 from backend.app.models.schema import Workspace
 from backend.app.api import (
-    meetings, live, tasks, approvals, emails, reminders, analytics, team, settings as app_settings
+    meetings, live, tasks, approvals, emails, reminders, analytics, team, settings as app_settings, memory,
+    integrations, digest
 )
 
 # Configure logging
@@ -87,6 +88,9 @@ app.include_router(emails.router)
 app.include_router(reminders.router)
 app.include_router(analytics.router)
 app.include_router(team.router)
+app.include_router(memory.router)
+app.include_router(integrations.router)
+app.include_router(digest.router)
 app.include_router(app_settings.router)
 
 @app.get("/")

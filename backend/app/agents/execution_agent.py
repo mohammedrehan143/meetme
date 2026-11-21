@@ -4,8 +4,13 @@ from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from backend.app.models.schema import Task, Approval, EmailLog, Reminder, AutomationLog, Notification
+from backend.app.models.schema import (
+    Task, Approval, EmailLog, Reminder, AutomationLog, Notification,
+    ExternalIntegration, ExternalIssueSync
+)
 from backend.app.services.email_service import email_service
+from backend.app.services.jira_service import jira_service
+from backend.app.services.github_service import github_service
 from backend.app.agents.email_agent import email_agent
 
 logger = logging.getLogger("meetme.agents.execution")
@@ -31,6 +36,23 @@ class ExecutionAgent:
 
         if not approval:
             raise ValueError(f"Approval {approval_id} not found.")
+
+        # Handle Decision Conflict Resolution approvals
+        if getattr(approval, "action_category", "") == "DECISION_RESOLUTION" or str(approval.task_id or "").startswith("conflict-"):
+            from backend.app.services.conflict_service import conflict_service
+            conflict_id = approval.proposed_payload.get("conflict_id") if approval.proposed_payload else None
+            action = (custom_payload or {}).get("action", "ACCEPT_NEW")
+            res = await conflict_service.resolve_conflict(
+                db=db,
+                conflict_id=conflict_id,
+                action=action,
+                user_id=user_id,
+                resolution_notes=approved_notes or f"Conflict resolved as {action}"
+            )
+            approval.status = "APPROVED"
+            approval.approved_at = datetime.utcnow()
+            await db.commit()
+            return res
 
         # 2. Fetch associated task
         task_stmt = select(Task).where(Task.id == approval.task_id)
@@ -85,7 +107,84 @@ class ExecutionAgent:
         if user_id:
             approval.user_id = user_id
 
-        # 5. Generate and Send Task Assignment Email via Gmail SMTP
+        # 5. External Issue Creation (Jira & GitHub) with Global Human Approval Gate
+        external_jira_key = None
+        if payload.get("create_jira_issue") or payload.get("target_platform") == "JIRA":
+            jira_int_stmt = select(ExternalIntegration).where(
+                ExternalIntegration.workspace_id == task.workspace_id,
+                ExternalIntegration.provider == "JIRA",
+                ExternalIntegration.is_active == True
+            )
+            jira_int = (await db.execute(jira_int_stmt)).scalar_one_or_none()
+            if jira_int and jira_int.credentials_encrypted:
+                creds = jira_int.credentials_encrypted
+                conf = jira_int.config or {}
+                jira_res = await jira_service.create_issue(
+                    domain=creds.get("domain", ""),
+                    email=creds.get("email", ""),
+                    api_token=creds.get("api_token", ""),
+                    project_key=conf.get("project_key", "PROJ"),
+                    title=task.title,
+                    description=task.description or task.title,
+                    issue_type=conf.get("issue_type", "Task"),
+                    priority=task.priority,
+                    duedate=task.deadline
+                )
+                if jira_res.get("success"):
+                    external_jira_key = jira_res.get("issue_key")
+                    sync_rec = ExternalIssueSync(
+                        workspace_id=task.workspace_id,
+                        task_id=task.id,
+                        approval_id=approval.id,
+                        provider="JIRA",
+                        external_id=jira_res.get("issue_id"),
+                        external_key_or_number=jira_res.get("issue_key"),
+                        external_url=jira_res.get("issue_url"),
+                        title=task.title,
+                        status="CREATED",
+                        idempotency_key=f"jira_{task.id}_{approval.id}"
+                    )
+                    db.add(sync_rec)
+                    logger.info(f"Task {task.id} synchronized to Jira: {external_jira_key}")
+
+        external_gh_number = None
+        if payload.get("create_github_issue") or payload.get("target_platform") == "GITHUB":
+            gh_int_stmt = select(ExternalIntegration).where(
+                ExternalIntegration.workspace_id == task.workspace_id,
+                ExternalIntegration.provider == "GITHUB",
+                ExternalIntegration.is_active == True
+            )
+            gh_int = (await db.execute(gh_int_stmt)).scalar_one_or_none()
+            if gh_int and gh_int.credentials_encrypted:
+                creds = gh_int.credentials_encrypted
+                conf = gh_int.config or {}
+                gh_res = await github_service.create_issue(
+                    token=creds.get("token", ""),
+                    repo=conf.get("repo", ""),
+                    title=task.title,
+                    description=task.description or task.title,
+                    priority=task.priority,
+                    deadline=task.deadline,
+                    evidence=task.evidence_quote
+                )
+                if gh_res.get("success"):
+                    external_gh_number = f"#{gh_res.get('issue_number')}"
+                    sync_rec = ExternalIssueSync(
+                        workspace_id=task.workspace_id,
+                        task_id=task.id,
+                        approval_id=approval.id,
+                        provider="GITHUB",
+                        external_id=gh_res.get("issue_id"),
+                        external_key_or_number=str(gh_res.get("issue_number")),
+                        external_url=gh_res.get("issue_url"),
+                        title=task.title,
+                        status="CREATED",
+                        idempotency_key=f"gh_{task.id}_{approval.id}"
+                    )
+                    db.add(sync_rec)
+                    logger.info(f"Task {task.id} synchronized to GitHub: {external_gh_number}")
+
+        # 6. Generate and Send Task Assignment Email via Brevo/Resend/SMTP
         email_sent = False
         email_id = None
         email_status = "SKIPPED"
@@ -220,11 +319,13 @@ class ExecutionAgent:
                 "task_id": task.id,
                 "email_sent": email_sent,
                 "email_status": email_status,
-                "email_provider": "Gmail SMTP",
+                "email_provider": email_service.active_provider,
+                "jira_key": external_jira_key,
+                "github_number": external_gh_number,
                 "reminders_scheduled": scheduled_reminders
             },
             status="SUCCESS" if (email_sent or not task.assignee_email) else "PARTIAL",
-            message=f"Task '{task.title}' approved. Gmail SMTP status: {email_status}. Reminders: {len(scheduled_reminders)}"
+            message=f"Task '{task.title}' approved. Provider: {email_service.active_provider}. Status: {email_status}. Reminders: {len(scheduled_reminders)}"
         )
         db.add(auto_log)
 
@@ -233,7 +334,7 @@ class ExecutionAgent:
             workspace_id=task.workspace_id,
             user_id=user_id,
             title="Task Executed",
-            message=f"'{task.title}' was approved and dispatched to {task.assignee_email or 'unassigned'} via Gmail SMTP.",
+            message=f"'{task.title}' was approved and dispatched to {task.assignee_email or 'unassigned'} via {email_service.active_provider}.",
             type="SUCCESS",
             link="/tasks"
         )
@@ -248,6 +349,8 @@ class ExecutionAgent:
             "task_status": task.status,
             "email_status": email_status,
             "email_id": email_id,
+            "jira_key": external_jira_key,
+            "github_number": external_gh_number,
             "reminders_count": len(scheduled_reminders)
         }
 

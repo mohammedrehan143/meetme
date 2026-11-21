@@ -15,7 +15,10 @@ import {
   Mail, 
   Settings,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Brain,
+  Layers,
+  FileText
 } from "lucide-react";
 
 interface SidebarProps {
@@ -30,6 +33,7 @@ export function Sidebar({ pendingApprovalsCount = 0 }: SidebarProps) {
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
     { name: "Live Meeting", href: "/live", icon: Radio, highlight: true },
     { name: "Meeting History", href: "/meetings", icon: History },
+    { name: "Memory Engine", href: "/memory", icon: Brain },
     { name: "Tasks", href: "/tasks", icon: CheckSquare },
     { 
       name: "Approvals", 
@@ -37,12 +41,14 @@ export function Sidebar({ pendingApprovalsCount = 0 }: SidebarProps) {
       icon: ShieldAlert, 
       badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : undefined 
     },
+    { name: "Integrations", href: "/integrations", icon: Layers },
     { name: "Automations", href: "/automations", icon: Cpu },
     { name: "Analytics", href: "/analytics", icon: BarChart3 },
   ];
 
   const managementLinks = [
     { name: "Team", href: "/team", icon: Users },
+    { name: "Weekly Digest", href: "/digest", icon: FileText },
     { name: "Email Activity", href: "/emails", icon: Mail },
     { name: "Settings", href: "/settings", icon: Settings },
   ];
