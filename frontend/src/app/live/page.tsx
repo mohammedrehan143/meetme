@@ -58,6 +58,62 @@ export default function LiveMeetingPage() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  const startSpeechRecognition = () => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.log("Web Speech API not available in this browser. You can type or paste segments manually.");
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      recognition.onresult = (event: any) => {
+        const lastIdx = event.results.length - 1;
+        const result = event.results[lastIdx];
+        if (result && result.isFinal) {
+          const transcriptText = result[0].transcript.trim();
+          if (transcriptText) {
+            const currentSpeaker = simulatedSpeakers[speakerIndex % simulatedSpeakers.length];
+            sendTranscriptSegment(currentSpeaker, transcriptText);
+            setSpeakerIndex((s) => s + 1);
+          }
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn("Speech recognition notice:", event.error);
+      };
+
+      recognition.onend = () => {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          try {
+            recognition.start();
+          } catch {}
+        }
+      };
+
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.warn("Speech recognition notice:", e);
+    }
+  };
+
+  const stopSpeechRecognition = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+  };
 
   const handleAudioChunk = (blob: Blob) => {
     // When a 4-second audio chunk is generated:
@@ -157,6 +213,9 @@ export default function LiveMeetingPage() {
       // 3. Start Audio Capture (getDisplayMedia for Google Meet tab + getUserMedia)
       await startCapture(captureTabAudio);
 
+      // 4. Start Real-time Speech-to-Text Recognition
+      startSpeechRecognition();
+
       // Seed initial greeting segment
       setTimeout(() => {
         sendTranscriptSegment(
@@ -174,6 +233,7 @@ export default function LiveMeetingPage() {
 
   const handleEndMeeting = async () => {
     stopCapture();
+    stopSpeechRecognition();
     if (wsRef.current) {
       wsRef.current.close();
     }
