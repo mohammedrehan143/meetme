@@ -111,4 +111,17 @@ async def init_db():
                     await conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {col_type}"))
                 except Exception:
                     pass
+
+        # Seed default admin user to satisfy foreign keys
+        try:
+            default_uid = settings.DEFAULT_USER_ID or "usr-user-001"
+            u_check = (await conn.execute(text(f"SELECT id FROM users WHERE id = '{default_uid}'"))).fetchone()
+            if not u_check:
+                await conn.execute(text(
+                    f"INSERT INTO users (id, email, full_name, role) "
+                    f"VALUES ('{default_uid}', 'admin@meetme.work', 'Default Admin', 'admin')"
+                ))
+        except Exception as e:
+            logger.debug(f"Default user seed note: {e}")
+
     logger.info("Database tables verified/created successfully.")

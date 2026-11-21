@@ -82,23 +82,7 @@ export default function ApprovalsPage() {
 
   const handleApproveSingle = async (app: Approval) => {
     const p = app.proposed_payload || {};
-    let targetEmail = (destinationEmails[app.id] || p.assignee_email || "").trim();
-
-    // If destination email is empty, prompt the user so it is NEVER silently skipped!
-    if (!targetEmail) {
-      const entered = window.prompt(
-        `Please specify the destination email address to receive this task assignment:\n"${p.title || 'Task'}"`,
-        ""
-      );
-      if (entered === null) {
-        // User cancelled, abort approval
-        return;
-      }
-      targetEmail = entered.trim();
-      if (targetEmail) {
-        setDestinationEmails((prev) => ({ ...prev, [app.id]: targetEmail }));
-      }
-    }
+    const targetEmail = (destinationEmails[app.id] || p.assignee_email || app.approved_recipient || "").trim();
 
     setExecuting(true);
     try {
@@ -106,7 +90,7 @@ export default function ApprovalsPage() {
         ...p,
         assignee_email: targetEmail || undefined,
       };
-      await api.approveAction(app.id, customPayload, "Approved with verified destination email");
+      await api.approveAction(app.id, customPayload, "Approved by user");
       await loadApprovals();
     } catch (err: any) {
       alert(`Approval execution failed: ${err.message}`);
@@ -117,22 +101,17 @@ export default function ApprovalsPage() {
 
   const handleSendEmailNow = async (app: Approval) => {
     const p = app.proposed_payload || {};
-    let targetEmail = (destinationEmails[app.id] || p.assignee_email || app.approved_recipient || "").trim();
+    const targetEmail = (destinationEmails[app.id] || p.assignee_email || app.approved_recipient || "").trim();
 
     if (!targetEmail) {
-      const entered = window.prompt(
-        `Enter destination email address to dispatch task assignment:\n"${p.title || 'Task'}"`,
-        "25ug1byai034@bmsit.in"
-      );
-      if (!entered || !entered.trim()) return;
-      targetEmail = entered.trim();
-      setDestinationEmails((prev) => ({ ...prev, [app.id]: targetEmail }));
+      alert("Please enter a destination email address in the field above before sending.");
+      return;
     }
 
     setExecuting(true);
     try {
       await api.dispatchApprovalEmail(app.id, targetEmail, p.assignee_name);
-      alert(`Assignment email successfully dispatched to ${targetEmail} via Gmail SMTP!`);
+      alert(`Assignment email successfully dispatched to ${targetEmail}!`);
       await loadApprovals();
     } catch (err: any) {
       alert(`Email dispatch failed: ${err.message}`);
@@ -155,10 +134,9 @@ export default function ApprovalsPage() {
   };
 
   const handleRejectSingle = async (approvalId: string) => {
-    const reason = prompt("Optional rejection reason:") || undefined;
     setExecuting(true);
     try {
-      await api.rejectAction(approvalId, reason);
+      await api.rejectAction(approvalId, "Rejected by reviewer");
       await loadApprovals();
     } catch (err: any) {
       alert(`Rejection failed: ${err.message}`);
@@ -486,7 +464,7 @@ export default function ApprovalsPage() {
                           type="email"
                           value={destinationEmails[app.id] ?? (p.assignee_email || app.approved_recipient || "")}
                           onChange={(e) => setDestinationEmails({ ...destinationEmails, [app.id]: e.target.value })}
-                          placeholder="e.g. 25ug1byai034@bmsit.in"
+                          placeholder="e.g. member@company.com"
                           className="bg-bg-elevated border border-border-subtle focus:border-accent-orange rounded px-2.5 py-1 text-xs text-text-primary font-mono w-60 sm:w-80"
                         />
                         {app.status === "APPROVED" && (
@@ -607,7 +585,7 @@ export default function ApprovalsPage() {
                     type="email"
                     value={editAssigneeEmail}
                     onChange={(e) => setEditAssigneeEmail(e.target.value)}
-                    placeholder="e.g. 25ug1byai034@bmsit.in"
+                    placeholder="e.g. member@company.com"
                     className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
                   />
                   <span className="text-[10px] text-text-muted mt-0.5 block">

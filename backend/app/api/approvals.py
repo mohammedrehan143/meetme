@@ -126,7 +126,14 @@ async def reject_approval(
     approval.status = "REJECTED"
     approval.approval_notes = payload.reason or "Rejected by reviewer"
     approval.approved_at = datetime.utcnow()
-    approval.user_id = payload.user_id or settings.DEFAULT_USER_ID
+    
+    valid_user_id = None
+    target_uid = payload.user_id or settings.DEFAULT_USER_ID
+    if target_uid:
+        from backend.app.models.schema import User
+        u_check = (await db.execute(select(User.id).where(User.id == target_uid))).scalar_one_or_none()
+        valid_user_id = u_check
+    approval.user_id = valid_user_id
 
     # Also update Task status to REJECTED
     task_stmt = select(Task).where(Task.id == approval.task_id)

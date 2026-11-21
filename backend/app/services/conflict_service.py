@@ -355,10 +355,16 @@ class ConflictService:
             conflict.status = "UNRESOLVED"
 
         # Record resolution audit log
+        valid_user_id = None
+        if user_id:
+            from backend.app.models.schema import User
+            u_check = (await db.execute(select(User.id).where(User.id == user_id))).scalar_one_or_none()
+            valid_user_id = u_check
+
         res_record = DecisionResolution(
             conflict_id=conflict.id,
             workspace_id=conflict.workspace_id,
-            resolved_by_user_id=user_id,
+            resolved_by_user_id=valid_user_id,
             action_taken=action,
             resolution_notes=resolution_notes or f"Conflict resolved with action: {action}",
             resolved_at=datetime.utcnow()

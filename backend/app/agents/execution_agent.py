@@ -56,6 +56,12 @@ class ExecutionAgent:
             )
             approval.status = "APPROVED"
             approval.approved_at = datetime.utcnow()
+            valid_user_id = None
+            if user_id:
+                from backend.app.models.schema import User
+                u_check = (await db.execute(select(User.id).where(User.id == user_id))).scalar_one_or_none()
+                valid_user_id = u_check
+            approval.user_id = valid_user_id
             await db.commit()
             return res
 
@@ -121,8 +127,12 @@ class ExecutionAgent:
             approval.approved_recipient = task.assignee_email
         approval.approval_notes = approved_notes or "Approved by user"
         approval.approved_at = datetime.utcnow()
+        valid_user_id = None
         if user_id:
-            approval.user_id = user_id
+            from backend.app.models.schema import User
+            u_check = (await db.execute(select(User.id).where(User.id == user_id))).scalar_one_or_none()
+            valid_user_id = u_check
+        approval.user_id = valid_user_id
 
         # 5. External Issue Creation (Jira & GitHub) with Global Human Approval Gate
         external_jira_key = None
