@@ -84,8 +84,8 @@ export default function LiveMeetingPage() {
   // Connect WebSocket when meeting starts
   const connectWebSocket = (mtgId: string) => {
     let wsUrl = `wss://meetme-8r0u.onrender.com/ws/live-meeting/${mtgId}`;
-    if (process.env.NEXT_PUBLIC_WS_URL) {
-      wsUrl = `${process.env.NEXT_PUBLIC_WS_URL}/ws/live-meeting/${mtgId}`;
+    if (process.env.NEXT_PUBLIC_WS_URL && process.env.NEXT_PUBLIC_WS_URL.trim() !== "") {
+      wsUrl = `${process.env.NEXT_PUBLIC_WS_URL.replace(/\/+$/, "")}/ws/live-meeting/${mtgId}`;
     } else if (typeof window !== "undefined" && window.location.protocol === "http:" && window.location.hostname === "localhost" && process.env.NEXT_PUBLIC_API_URL?.includes("127.0.0.1")) {
       wsUrl = `ws://127.0.0.1:8000/ws/live-meeting/${mtgId}`;
     }
