@@ -20,6 +20,8 @@ class UpdateSettingsRequest(BaseModel):
     gemini_model: Optional[str] = None
     resend_api_key: Optional[str] = None
     resend_from_email: Optional[str] = None
+    brevo_api_key: Optional[str] = None
+    brevo_from_email: Optional[str] = None
     smtp_host: Optional[str] = None
     smtp_port: Optional[int] = None
     smtp_email: Optional[str] = None
@@ -51,6 +53,13 @@ async def get_settings():
             "masked_key": mask_key(settings.GEMINI_API_KEY),
             "model": settings.GEMINI_MODEL
         },
+        "brevo": {
+            "is_configured": email_service.is_brevo_configured,
+            "masked_key": mask_key(settings.BREVO_API_KEY),
+            "from_email": settings.BREVO_FROM_EMAIL or "mrofficialyt083@gmail.com",
+            "port": 443,
+            "protocol": "HTTPS REST API (Sends to all inboxes without custom domain)"
+        },
         "resend": {
             "is_configured": email_service.is_resend_configured,
             "masked_key": mask_key(settings.RESEND_API_KEY),
@@ -63,6 +72,12 @@ async def get_settings():
             "host": settings.SMTP_HOST,
             "port": settings.SMTP_PORT,
             "email": settings.SMTP_EMAIL or "",
+            "masked_password": mask_key(settings.SMTP_PASSWORD),
+            "from_name": settings.SMTP_FROM_NAME,
+            "provider": "Gmail SMTP (STARTTLS / SSL)"
+        },
+        "default_workspace_id": settings.DEFAULT_WORKSPACE_ID
+    }
             "masked_password": mask_key(settings.SMTP_PASSWORD),
             "from_name": settings.SMTP_FROM_NAME,
             "provider": "Gmail SMTP (STARTTLS / SSL)"
@@ -96,6 +111,15 @@ async def update_settings(payload: UpdateSettingsRequest):
         settings.RESEND_FROM_EMAIL = payload.resend_from_email
         email_service.resend_from_email = payload.resend_from_email
         os.environ["RESEND_FROM_EMAIL"] = payload.resend_from_email
+
+    if payload.brevo_api_key is not None:
+        settings.BREVO_API_KEY = payload.brevo_api_key
+        email_service.brevo_api_key = payload.brevo_api_key
+        os.environ["BREVO_API_KEY"] = payload.brevo_api_key
+    if payload.brevo_from_email is not None:
+        settings.BREVO_FROM_EMAIL = payload.brevo_from_email
+        email_service.brevo_from_email = payload.brevo_from_email
+        os.environ["BREVO_FROM_EMAIL"] = payload.brevo_from_email
 
     if payload.smtp_host is not None:
         settings.SMTP_HOST = payload.smtp_host

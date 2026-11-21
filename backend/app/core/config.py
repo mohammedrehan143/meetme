@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     RESEND_API_KEY: Optional[str] = os.getenv("RESEND_API_KEY", "")
     RESEND_FROM_EMAIL: str = os.getenv("RESEND_FROM_EMAIL", "MEETME <onboarding@resend.dev>")
 
+    # Brevo Email Configuration (HTTPS Port 443 - Sends to ANY recipient without a domain!)
+    BREVO_API_KEY: Optional[str] = os.getenv("BREVO_API_KEY", "")
+    BREVO_FROM_EMAIL: str = os.getenv("BREVO_FROM_EMAIL", "mrofficialyt083@gmail.com")
+
     # Native Gmail SMTP Configuration
     SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", 587))

@@ -16,6 +16,8 @@ export default function SettingsPage() {
   // Resend Cloud HTTP API State (Port 443 - Recommended for Render)
   const [resendApiKey, setResendApiKey] = useState("");
   const [resendFromEmail, setResendFromEmail] = useState("MEETME Platform <onboarding@resend.dev>");
+  const [brevoApiKey, setBrevoApiKey] = useState("");
+  const [brevoFromEmail, setBrevoFromEmail] = useState("mrofficialyt083@gmail.com");
   const [testEmailRecipient, setTestEmailRecipient] = useState("25ug1byai034@bmsit.in");
   const [testingEmail, setTestingEmail] = useState(false);
   const [dispatchingTest, setDispatchingTest] = useState(false);
@@ -43,6 +45,7 @@ export default function SettingsPage() {
       if (data?.groq?.model) setGroqModel(data.groq.model);
       if (data?.gemini?.model) setGeminiModel(data.gemini.model);
       if (data?.resend?.from_email) setResendFromEmail(data.resend.from_email);
+      if (data?.brevo?.from_email) setBrevoFromEmail(data.brevo.from_email);
       if (data?.smtp?.email) setSmtpEmail(data.smtp.email);
       if (data?.smtp?.host) setSmtpHost(data.smtp.host);
       if (data?.smtp?.port) setSmtpPort(data.smtp.port);
@@ -64,6 +67,8 @@ export default function SettingsPage() {
         gemini_model: geminiModel,
         resend_api_key: resendApiKey.trim() || undefined,
         resend_from_email: resendFromEmail.trim() || undefined,
+        brevo_api_key: brevoApiKey.trim() || undefined,
+        brevo_from_email: brevoFromEmail.trim() || undefined,
         smtp_email: smtpEmail.trim() || undefined,
         smtp_password: smtpPassword.trim() || undefined,
         smtp_host: smtpHost.trim() || undefined,
@@ -74,6 +79,7 @@ export default function SettingsPage() {
       setGroqKey("");
       setGeminiKey("");
       setResendApiKey("");
+      setBrevoApiKey("");
       setSmtpPassword("");
       await loadSettings();
     } catch (err: any) {
@@ -233,6 +239,73 @@ export default function SettingsPage() {
                 <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Experimental)</option>
               </select>
             </div>
+          </div>
+        </div>
+
+        {/* Brevo Cloud HTTP Email Service (Recommended - Sends to ANY recipient without domain verification!) */}
+        <div className="p-5 rounded bg-bg-card border border-accent-neon/30 space-y-4">
+          <div className="flex items-center justify-between border-b border-border-subtle pb-3">
+            <div className="flex items-center gap-2">
+              <Zap size={16} className="text-accent-neon" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                Brevo HTTP Email Engine (Sends to ANY Email - No Domain Required)
+              </h3>
+            </div>
+            <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${
+              config?.brevo?.is_configured ? "bg-accent-neon/20 text-accent-neon" : "bg-bg-elevated text-accent-neon font-bold"
+            }`}>
+              {config?.brevo?.is_configured ? "BREVO ACTIVE (PORT 443 - ALL INBOXES)" : "RECOMMENDED (NO DOMAIN NEEDED)"}
+            </span>
+          </div>
+
+          <div className="p-3 bg-accent-neon/10 border border-accent-neon/20 rounded text-[11px] text-text-secondary leading-relaxed">
+            <strong className="text-accent-neon font-semibold">Universal Inbox Delivery: </strong>
+            Unlike Resend, Brevo does not require owning or configuring a custom domain. Once you verify your Gmail sender, 
+            Brevo sends directly to <strong>any destination email</strong> (e.g. <code className="text-accent-neon">25ug1byai034@bmsit.in</code>) over HTTPS Port 443 with 300 free emails/day.
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="text-text-secondary block mb-1">
+                Brevo API Key {config?.brevo?.is_configured && `(Current: ${config.brevo.masked_key})`}
+              </label>
+              <input
+                type="password"
+                value={brevoApiKey}
+                onChange={(e) => setBrevoApiKey(e.target.value)}
+                placeholder="xkeysib-..."
+                className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-neon font-mono"
+              />
+              <span className="text-[10px] text-text-muted mt-1 block">
+                Get free key in 60s at brevo.com &rarr; SMTP &amp; API &rarr; API Keys.
+              </span>
+            </div>
+
+            <div>
+              <label className="text-text-secondary block mb-1">Verified Sender Address (From)</label>
+              <input
+                type="email"
+                value={brevoFromEmail}
+                onChange={(e) => setBrevoFromEmail(e.target.value)}
+                placeholder="mrofficialyt083@gmail.com"
+                className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-neon font-mono"
+              />
+              <span className="text-[10px] text-text-muted mt-1 block">
+                The Gmail address you used to register on Brevo.
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-border-subtle flex justify-end">
+            <a
+              href="https://app.brevo.com/settings/keys/api"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-accent-neon hover:underline flex items-center gap-1 font-mono"
+            >
+              <span>Get Free API Key at brevo.com (SMTP &amp; API &rarr; API Keys)</span>
+              <ExternalLink size={11} />
+            </a>
           </div>
         </div>
 
