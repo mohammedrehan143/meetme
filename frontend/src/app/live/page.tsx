@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { 
   Radio, 
@@ -46,8 +47,9 @@ export default function LiveMeetingPage() {
   const [meetingTitle, setMeetingTitle] = useState("Live Execution Sync");
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
-  const [consentAcknowledged, setConsentAcknowledged] = useState(false);
+  const [consentAcknowledged, setConsentAcknowledged] = useState(true);
   const [captureTabAudio, setCaptureTabAudio] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [transcriptSegments, setTranscriptSegments] = useState<LiveSegment[]>([]);
   const [detectedTasks, setDetectedTasks] = useState<DetectedTask[]>([]);
   const [detectedDecisions, setDetectedDecisions] = useState<DetectedDecision[]>([]);
@@ -81,61 +83,66 @@ export default function LiveMeetingPage() {
 
   // Connect WebSocket when meeting starts
   const connectWebSocket = (mtgId: string) => {
-    let wsUrl = `ws://127.0.0.1:8000/ws/live-meeting/${mtgId}`;
+    let wsUrl = `wss://meetme-8r0u.onrender.com/ws/live-meeting/${mtgId}`;
     if (process.env.NEXT_PUBLIC_WS_URL) {
       wsUrl = `${process.env.NEXT_PUBLIC_WS_URL}/ws/live-meeting/${mtgId}`;
-    } else if (process.env.NEXT_PUBLIC_API_URL) {
-      const clean = process.env.NEXT_PUBLIC_API_URL.replace(/^http/, "ws").replace(/\/api\/?$/, "");
-      wsUrl = `${clean}/ws/live-meeting/${mtgId}`;
-    } else if (typeof window !== "undefined" && !window.location.origin.includes("localhost")) {
-      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      wsUrl = `${proto}//${window.location.host}/ws/live-meeting/${mtgId}`;
+    } else if (typeof window !== "undefined" && window.location.protocol === "http:" && window.location.hostname === "localhost" && process.env.NEXT_PUBLIC_API_URL?.includes("127.0.0.1")) {
+      wsUrl = `ws://127.0.0.1:8000/ws/live-meeting/${mtgId}`;
     }
 
-    const ws = new WebSocket(wsUrl);
+    try {
+      const ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => {
-      setWsConnected(true);
-      console.log("Connected to Live Meeting WebSocket");
-    };
+      ws.onopen = () => {
+        setWsConnected(true);
+        console.log("Connected to Live Meeting WebSocket:", wsUrl);
+      };
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "LIVE_TRANSCRIPT_SEGMENT") {
-          setTranscriptSegments((prev) => [
-            ...prev,
-            {
-              speaker: msg.speaker,
-              text: msg.text,
-              timestamp: msg.timestamp,
-              classification: msg.classification,
-            },
-          ]);
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "LIVE_TRANSCRIPT_SEGMENT") {
+            setTranscriptSegments((prev) => [
+              ...prev,
+              {
+                speaker: msg.speaker,
+                text: msg.text,
+                timestamp: msg.timestamp,
+                classification: msg.classification,
+              },
+            ]);
 
-          if (msg.detected_task) {
-            setDetectedTasks((prev) => [...prev, msg.detected_task]);
+            if (msg.detected_task) {
+              setDetectedTasks((prev) => [...prev, msg.detected_task]);
+            }
+            if (msg.detected_decision) {
+              setDetectedDecisions((prev) => [...prev, msg.detected_decision]);
+            }
           }
-          if (msg.detected_decision) {
-            setDetectedDecisions((prev) => [...prev, msg.detected_decision]);
-          }
+        } catch (err) {
+          console.error("WS Parse error:", err);
         }
-      } catch (err) {
-        console.error("WS Parse error:", err);
-      }
-    };
+      };
 
-    ws.onclose = () => {
-      setWsConnected(false);
-      console.log("Live Meeting WebSocket closed");
-    };
+      ws.onclose = () => {
+        setWsConnected(false);
+        console.log("Live Meeting WebSocket closed");
+      };
 
-    wsRef.current = ws;
+      ws.onerror = (err) => {
+        console.warn("Live Meeting WebSocket warning:", err);
+      };
+
+      wsRef.current = ws;
+    } catch (e) {
+      console.warn("Could not open WebSocket, falling back to local state:", e);
+    }
   };
 
   const handleStartMeeting = async () => {
+    setErrorMessage(null);
     if (!consentAcknowledged) {
-      alert("Please confirm participant consent before recording.");
+      setErrorMessage("Please acknowledge participant consent before recording audio.");
       return;
     }
 
@@ -147,7 +154,7 @@ export default function LiveMeetingPage() {
       // 2. Start WebSocket
       connectWebSocket(created.id);
 
-      // 3. Start Audio Capture (getDisplayMedia + getUserMedia)
+      // 3. Start Audio Capture (getDisplayMedia for Google Meet tab + getUserMedia)
       await startCapture(captureTabAudio);
 
       // Seed initial greeting segment
@@ -157,10 +164,11 @@ export default function LiveMeetingPage() {
           "Meeting started. Let's align on sprint tasks and finalize assignments.",
           "00:00:03"
         );
-      }, 2000);
+      }, 1500);
 
     } catch (err: any) {
-      alert(`Could not start meeting: ${err.message}`);
+      console.error("Start meeting error:", err);
+      setErrorMessage(err.message || "Could not start meeting.");
     }
   };
 
@@ -296,18 +304,63 @@ export default function LiveMeetingPage() {
         </div>
       </div>
 
-      {/* Consent & Permission Banner */}
-      {!audioState.isRecording && (
-        <div className="p-4 rounded bg-bg-card border border-border-subtle space-y-3">
-          <div className="flex items-start gap-2.5">
-            <ShieldCheck size={18} className="text-accent-neon shrink-0 mt-0.5" />
+      {/* Error / Alert Notification Banner */}
+      {errorMessage && (
+        <div className="p-3.5 rounded bg-red-950/40 border border-red-500/40 text-red-200 text-xs flex items-start justify-between gap-3 animate-fade-in">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <h4 className="text-xs font-bold text-text-primary">Participant Consent & Browser Audio Capture Requirements</h4>
-              <p className="text-[11px] text-text-secondary leading-relaxed">
-                MEETME captures microphone audio and browser tab audio via Web Audio API. 
-                When prompted by your browser, select the meeting tab (e.g., Google Meet, Zoom Web, or Teams) and ensure 
-                <strong className="text-text-primary font-mono"> &quot;Share tab audio&quot; </strong> is checked.
-              </p>
+              <span className="font-semibold text-white">Live Capture Notice:</span>
+              <p className="text-[11px] text-red-200/90 leading-relaxed">{errorMessage}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="text-red-400 hover:text-white text-xs font-mono px-2 py-0.5 rounded bg-red-900/40"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Google Meet & Screen Audio Capture Guide Banner */}
+      {!audioState.isRecording && (
+        <div className="p-4 rounded bg-bg-card border border-accent-orange/30 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheck size={18} className="text-accent-neon shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-text-primary">
+                  How to Hook into an Active Google Meet / Zoom Call
+                </h4>
+                <p className="text-[11px] text-text-secondary leading-relaxed">
+                  Web browsers require explicit permission to capture audio from other tabs. Follow these 3 steps:
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/recorded"
+              className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono text-accent-orange hover:underline whitespace-nowrap"
+            >
+              <span>Have transcript / notes? Paste here &rarr;</span>
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1 text-xs">
+            <div className="p-2.5 rounded bg-bg-elevated/60 border border-border-subtle space-y-1">
+              <span className="text-[10px] font-mono font-bold text-accent-orange">STEP 1</span>
+              <p className="text-[11px] text-text-primary font-medium">Click &quot;Start Live Meeting&quot;</p>
+              <p className="text-[10px] text-text-muted">Initiates dual-stream audio session and cloud multi-agent listener.</p>
+            </div>
+            <div className="p-2.5 rounded bg-bg-elevated/60 border border-border-subtle space-y-1">
+              <span className="text-[10px] font-mono font-bold text-accent-neon">STEP 2</span>
+              <p className="text-[11px] text-text-primary font-medium">Select &quot;Chrome Tab&quot;</p>
+              <p className="text-[10px] text-text-muted">In Chrome&apos;s system popup, choose your active Google Meet tab.</p>
+            </div>
+            <div className="p-2.5 rounded bg-bg-elevated/60 border border-border-subtle space-y-1">
+              <span className="text-[10px] font-mono font-bold text-accent-orange">STEP 3</span>
+              <p className="text-[11px] text-text-primary font-medium">Check &quot;Also share tab audio&quot;</p>
+              <p className="text-[10px] text-text-muted">Toggle the audio checkbox at the bottom-left of Chrome&apos;s modal and click Share.</p>
             </div>
           </div>
 
@@ -319,7 +372,7 @@ export default function LiveMeetingPage() {
                 onChange={(e) => setCaptureTabAudio(e.target.checked)}
                 className="accent-accent-orange rounded"
               />
-              <span className="text-text-secondary">Capture browser tab audio (alongside microphone)</span>
+              <span className="text-text-secondary">Capture browser tab audio (Google Meet remote participants)</span>
             </label>
 
             <label className="flex items-center gap-2 cursor-pointer">
@@ -329,7 +382,7 @@ export default function LiveMeetingPage() {
                 onChange={(e) => setConsentAcknowledged(e.target.checked)}
                 className="accent-accent-orange rounded"
               />
-              <span className="text-text-primary font-medium">All participants have consented to AI recording</span>
+              <span className="text-text-primary font-medium">All meeting participants consent to AI action extraction</span>
             </label>
           </div>
         </div>

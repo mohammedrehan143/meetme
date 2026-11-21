@@ -2,11 +2,14 @@ import {
   Meeting, Task, Approval, EmailLog, Reminder, TeamMember, AnalyticsData, NotificationItem 
 } from "./types";
 
+export const PRODUCTION_API_URL = "https://meetme-8r0u.onrender.com/api";
+export const PRODUCTION_WS_URL = "wss://meetme-8r0u.onrender.com";
+
 const API_BASE = 
   process.env.NEXT_PUBLIC_API_URL || 
-  (typeof window !== "undefined" && !window.location.origin.includes("localhost")
-    ? "/api"
-    : "http://127.0.0.1:8000/api");
+  (typeof window !== "undefined" && window.location.origin.includes("localhost")
+    ? PRODUCTION_API_URL
+    : "/api");
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {

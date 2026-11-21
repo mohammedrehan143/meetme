@@ -52,14 +52,27 @@ export default function MeetingDetailPage() {
 
   if (!meeting) {
     return (
-      <div className="p-12 text-center text-xs text-text-muted space-y-3">
-        <p>Meeting not found.</p>
-        <button
-          onClick={() => router.push("/meetings")}
-          className="px-3 py-1.5 bg-bg-card border border-border-subtle rounded text-xs text-text-primary"
-        >
-          Return to Meeting Archives
-        </button>
+      <div className="p-12 text-center text-xs text-text-muted space-y-4 max-w-md mx-auto">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-text-primary">Meeting Intelligence Record Not Found</p>
+          <p className="text-[11px] text-text-secondary">
+            The requested meeting session could not be located in this workspace ledger.
+          </p>
+        </div>
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            onClick={() => router.push("/meetings")}
+            className="px-3 py-1.5 bg-bg-card border border-border-subtle hover:border-border-strong rounded text-xs text-text-primary transition-colors"
+          >
+            Meeting Archives
+          </button>
+          <button
+            onClick={() => router.push("/live")}
+            className="px-3 py-1.5 bg-accent-orange text-black font-semibold rounded text-xs hover:bg-accent-orange-hover transition-colors"
+          >
+            Start Live Meeting
+          </button>
+        </div>
       </div>
     );
   }

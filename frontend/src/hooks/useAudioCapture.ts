@@ -38,18 +38,26 @@ export function useAudioCapture(onAudioChunk?: (blob: Blob) => void) {
     setState((prev) => ({ ...prev, error: null }));
 
     try {
-      // 1. Microphone capture
-      const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false,
-      });
-      micStreamRef.current = micStream;
+      let micStream: MediaStream | null = null;
+      let hasMic = false;
 
-      // 2. Tab audio capture (getDisplayMedia)
+      // 1. Microphone capture (graceful fallback if microphone is blocked, unavailable, or in use)
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          video: false,
+        });
+        micStreamRef.current = micStream;
+        hasMic = true;
+      } catch (micErr) {
+        console.warn("Microphone access unavailable or declined:", micErr);
+      }
+
+      // 2. Tab audio capture (getDisplayMedia for Google Meet / Zoom / Teams)
       let tabStream: MediaStream | null = null;
       let hasTab = false;
 
@@ -57,7 +65,7 @@ export function useAudioCapture(onAudioChunk?: (blob: Blob) => void) {
         try {
           tabStream = await navigator.mediaDevices.getDisplayMedia({
             video: true,
-            audio: true, // Requires user to share audio
+            audio: true, // Prompts user to share audio
           });
           
           // Verify audio tracks exist in tab stream
@@ -65,12 +73,25 @@ export function useAudioCapture(onAudioChunk?: (blob: Blob) => void) {
           if (audioTracks.length > 0) {
             hasTab = true;
             tabStreamRef.current = tabStream;
+            // Stop video tracks immediately so we only stream audio without wasting CPU/GPU
+            tabStream.getVideoTracks().forEach((track) => track.stop());
           } else {
-            console.warn("No audio track detected in screen/tab capture. Microphone only.");
+            console.warn("No audio track detected in screen/tab capture. User may have forgotten 'Share tab audio'.");
           }
-        } catch (tabErr) {
-          console.warn("Tab audio permission dismissed or not granted, continuing with mic:", tabErr);
+        } catch (tabErr: any) {
+          console.warn("Tab audio permission dismissed or not granted:", tabErr);
+          // If user cancelled tab audio but mic is available, proceed with mic
+          if (!hasMic && tabErr.name === "NotAllowedError") {
+            throw new Error("Screen/Tab audio share was cancelled. Please click 'Start Live Meeting' and choose your Google Meet tab with 'Also share tab audio' checked.");
+          }
         }
+      }
+
+      // Ensure at least one audio stream is active
+      if (!hasMic && !hasTab) {
+        throw new Error(
+          "No audio stream captured. To capture Google Meet, select 'Chrome Tab' -> your Google Meet tab and ensure 'Also share tab audio' is checked, or allow microphone access."
+        );
       }
 
       // 3. Web Audio API Mixing
@@ -80,17 +101,18 @@ export function useAudioCapture(onAudioChunk?: (blob: Blob) => void) {
 
       const destination = audioContext.createMediaStreamDestination();
 
-      // Connect mic
-      const micSource = audioContext.createMediaStreamSource(micStream);
-      const micGain = audioContext.createGain();
-      micSource.connect(micGain);
-      micGain.connect(destination);
+      // Connect mic if present
+      if (micStream && hasMic) {
+        const micSource = audioContext.createMediaStreamSource(micStream);
+        const micGain = audioContext.createGain();
+        micSource.connect(micGain);
+        micGain.connect(destination);
+      }
 
       // Connect tab if present
-      let tabGain: GainNode | null = null;
       if (tabStream && hasTab) {
         const tabSource = audioContext.createMediaStreamSource(tabStream);
-        tabGain = audioContext.createGain();
+        const tabGain = audioContext.createGain();
         tabSource.connect(tabGain);
         tabGain.connect(destination);
       }
@@ -123,11 +145,11 @@ export function useAudioCapture(onAudioChunk?: (blob: Blob) => void) {
       setState({
         isRecording: true,
         isPaused: false,
-        isMicMuted: false,
+        isMicMuted: !hasMic,
         hasTabAudio: hasTab,
-        hasMicAudio: true,
-        tabAudioLevel: 0.5,
-        micAudioLevel: 0.7,
+        hasMicAudio: hasMic,
+        tabAudioLevel: hasTab ? 0.7 : 0,
+        micAudioLevel: hasMic ? 0.7 : 0,
         durationSeconds: 0,
         error: null,
       });
@@ -139,6 +161,7 @@ export function useAudioCapture(onAudioChunk?: (blob: Blob) => void) {
         isRecording: false,
         error: err.message || "Failed to access microphone or tab audio.",
       }));
+      throw err;
     }
   }, [onAudioChunk]);
 

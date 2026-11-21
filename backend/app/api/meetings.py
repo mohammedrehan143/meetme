@@ -57,14 +57,28 @@ async def get_meeting_details(
     meeting_id: str,
     db: AsyncSession = Depends(get_db)
 ):
-    stmt = select(Meeting).where(Meeting.id == meeting_id)
-    res = await db.execute(stmt)
-    meeting = res.scalar_one_or_none()
+    # Support alias lookups (demo, latest, default) or recover from undefined/null
+    if meeting_id in ("demo", "latest", "default", "undefined", "null"):
+        stmt = select(Meeting).order_by(desc(Meeting.created_at)).limit(1)
+        res = await db.execute(stmt)
+        meeting = res.scalar_one_or_none()
+        if not meeting:
+            from backend.app.demo.seed_data import seed_demo_workspace
+            await seed_demo_workspace(db=db, force=False)
+            res = await db.execute(stmt)
+            meeting = res.scalar_one_or_none()
+    else:
+        stmt = select(Meeting).where(Meeting.id == meeting_id)
+        res = await db.execute(stmt)
+        meeting = res.scalar_one_or_none()
+
     if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+        raise HTTPException(status_code=404, detail=f"Meeting '{meeting_id}' not found")
+
+    actual_meeting_id = meeting.id
 
     # Get transcripts
-    tr_stmt = select(MeetingTranscript).where(MeetingTranscript.meeting_id == meeting_id).order_by(MeetingTranscript.start_time)
+    tr_stmt = select(MeetingTranscript).where(MeetingTranscript.meeting_id == actual_meeting_id).order_by(MeetingTranscript.start_time)
     tr_res = await db.execute(tr_stmt)
     transcripts = [
         {
