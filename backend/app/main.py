@@ -1,5 +1,15 @@
-import logging
+import sys
 import os
+
+# Robust sys.path resolution for all cloud platforms (Render, Vercel, Docker)
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_backend_dir = os.path.dirname(_current_dir)
+_repo_root = os.path.dirname(_backend_dir)
+for _p in [_repo_root, _backend_dir]:
+    if _p and _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
