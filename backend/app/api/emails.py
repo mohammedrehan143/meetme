@@ -78,7 +78,7 @@ async def retry_email(email_id: str, db: AsyncSession = Depends(get_db)):
 
     if send_res.get("success"):
         log.status = send_res.get("status", "SENT")
-        log.provider = send_res.get("provider", "Gmail SMTP")
+        log.provider = send_res.get("provider", email_service.active_provider)
         log.provider_message_id = send_res.get("id")
         log.message_id = send_res.get("id")
         log.sent_at = datetime.utcnow()
@@ -174,12 +174,12 @@ async def send_custom_email(
     )
 
     if not res.get("success"):
-        raise HTTPException(status_code=500, detail=res.get("error", "Failed to dispatch email via Gmail SMTP"))
+        raise HTTPException(status_code=500, detail=res.get("error", "Failed to dispatch email"))
 
     return {
         "status": "SENT",
         "message_id": res.get("id"),
         "recipient": payload.to_email,
         "subject": payload.subject,
-        "provider": "Gmail SMTP"
+        "provider": res.get("provider", email_service.active_provider)
     }

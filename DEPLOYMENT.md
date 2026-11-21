@@ -16,9 +16,11 @@ This guide details how to deploy MEETME to production in under 10 minutes using:
 
 ### Step 1.2: Run Database Schema Migrations
 1. In the Supabase Dashboard, navigate to the **SQL Editor** on the left menu.
-2. Open or copy the contents of `backend/migrations/001_initial_schema.sql`.
-3. Paste the SQL script and click **Run**.
-4. This creates all 14 production tables (`workspaces`, `users`, `workspace_members`, `meetings`, `meeting_transcripts`, `tasks`, `approvals`, `email_logs`, `reminders`, `automation_logs`, `agent_runs`, etc.) with high-performance indexes.
+2. Run the migration scripts in numerical sequence:
+   - `backend/migrations/001_initial_schema.sql` (Core tables: workspaces, users, meetings, tasks, approvals, reminders)
+   - `backend/migrations/002_gmail_smtp_and_consolidated_reminders.sql` (Consolidated reminder columns and indexes)
+   - `backend/migrations/003_memory_engine_and_integrations.sql` (Memory engine: decisions, commitments, conflicts, resolutions, embeddings, Jira/GitHub integrations, weekly digests)
+3. This creates all 24 production tables with high-performance indexes and Row Level Security policies.
 
 ### Step 1.3: Retrieve Connection Strings
 1. In Supabase, go to **Project Settings** &rarr; **Database**.

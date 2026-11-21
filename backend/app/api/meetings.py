@@ -2,7 +2,7 @@ import os
 import shutil
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from pydantic import BaseModel
@@ -91,7 +91,7 @@ async def get_meeting_details(
     ]
 
     # Get tasks
-    t_stmt = select(Task).where(Task.meeting_id == meeting_id)
+    t_stmt = select(Task).where(Task.meeting_id == actual_meeting_id)
     t_res = await db.execute(t_stmt)
     tasks = [
         {
@@ -235,10 +235,14 @@ async def upload_meeting_file(
         "approvals_created": result.get("approvals_count", 0)
     }
 
+class ProcessTranscriptRequest(BaseModel):
+    transcript_text: Optional[str] = None
+
 @router.post("/{meeting_id}/process")
 async def process_transcript(
     meeting_id: str,
-    transcript_text: str = Form(...),
+    payload: Optional[ProcessTranscriptRequest] = Body(None),
+    transcript_text: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(Meeting).where(Meeting.id == meeting_id)
@@ -247,10 +251,21 @@ async def process_transcript(
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
+    text = (payload.transcript_text if payload else None) or transcript_text or ""
+    if not text.strip():
+        # Fallback: gather existing transcripts streamed to database during live meeting
+        tr_stmt = select(MeetingTranscript).where(MeetingTranscript.meeting_id == meeting.id).order_by(MeetingTranscript.start_time)
+        tr_rows = (await db.execute(tr_stmt)).scalars().all()
+        if tr_rows:
+            text = "\n".join([f"{t.speaker_name}: {t.text}" for t in tr_rows])
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="No transcript text provided or found for this meeting.")
+
     result = await orchestrator_agent.process_meeting_transcript(
         db=db,
         meeting_id=meeting.id,
-        transcript_text=transcript_text,
+        transcript_text=text,
         workspace_id=meeting.workspace_id
     )
 

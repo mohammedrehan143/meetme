@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-pro")
     
-    # Resend Email Configuration (HTTPS Port 443 - Render Cloud Compatible)
+    # Email Configuration
+    EMAIL_PROVIDER: str = os.getenv("EMAIL_PROVIDER", "resend").lower() # resend, brevo, smtp
     RESEND_API_KEY: Optional[str] = os.getenv("RESEND_API_KEY", "")
     RESEND_FROM_EMAIL: str = os.getenv("RESEND_FROM_EMAIL", "MEETME <onboarding@resend.dev>")
 

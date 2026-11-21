@@ -114,9 +114,11 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
 CREATE TABLE IF NOT EXISTS approvals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
-    task_id UUID REFERENCES tasks(id) ON DELETE CASCADE NOT NULL,
+    task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
     meeting_id UUID REFERENCES meetings(id) ON DELETE SET NULL,
     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action_category VARCHAR(50) DEFAULT 'EMAIL_DISPATCH',
+    target_platform VARCHAR(50) DEFAULT 'EMAIL',
     proposed_payload JSONB NOT NULL,
     approved_payload JSONB,
     status VARCHAR(50) DEFAULT 'PENDING', -- PENDING, APPROVED, REJECTED, MODIFIED

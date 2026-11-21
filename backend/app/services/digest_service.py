@@ -187,7 +187,7 @@ class DigestService:
         </div>
         """
 
-    async def send_digest(self, db: AsyncSession, digest_id: str) -> Dict[str, Any]:
+    async def send_digest(self, db: AsyncSession, digest_id: str, custom_recipient_email: Optional[str] = None) -> Dict[str, Any]:
         """
         Dispatches the weekly digest email using the active email provider.
         """
@@ -197,11 +197,12 @@ class DigestService:
         if not digest:
             raise ValueError(f"Weekly digest {digest_id} not found.")
 
-        idempotency_key = f"weekly_digest_{digest.member_id}_{digest.period_start.strftime('%Y%m%d')}"
-        subject = f"MEETME Weekly Execution Digest &mdash; {digest.period_start.strftime('%b %d')} - {digest.period_end.strftime('%b %d')}"
+        target_to = (custom_recipient_email or digest.recipient_email).strip()
+        idempotency_key = f"weekly_digest_{digest.member_id}_{digest.period_start.strftime('%Y%m%d')}_{target_to}"
+        subject = f"MEETME Weekly Execution Digest — {digest.period_start.strftime('%b %d')} - {digest.period_end.strftime('%b %d')}"
 
         send_res = await email_service.send_email(
-            to=digest.recipient_email,
+            to=target_to,
             subject=subject,
             html=digest.html_body,
             text="Please open this email in an HTML-compatible client to view your weekly digest.",

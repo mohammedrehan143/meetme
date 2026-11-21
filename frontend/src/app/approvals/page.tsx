@@ -88,7 +88,7 @@ export default function ApprovalsPage() {
     if (!targetEmail) {
       const entered = window.prompt(
         `Please specify the destination email address to receive this task assignment:\n"${p.title || 'Task'}"`,
-        "25ug1byai034@bmsit.in"
+        ""
       );
       if (entered === null) {
         // User cancelled, abort approval

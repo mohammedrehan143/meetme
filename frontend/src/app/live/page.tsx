@@ -256,15 +256,11 @@ export default function LiveMeetingPage() {
         .join("\n");
 
       try {
-        const formData = new FormData();
-        const blob = new Blob([fullText], { type: "text/plain" });
-        formData.append("file", blob, `${meetingTitle}.txt`);
-        formData.append("title", meetingTitle);
-
-        await api.uploadMeeting(formData);
+        // Finalize and process the original meeting ID directly
+        await api.processMeeting(meetingId, fullText);
         router.push("/approvals");
       } catch (err) {
-        console.error("End meeting upload error:", err);
+        console.error("End meeting process error:", err);
         router.push("/meetings");
       }
     }

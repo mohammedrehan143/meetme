@@ -26,6 +26,7 @@ async def run_all_tests():
 
     await init_db()
     email_service.resend_api_key = None
+    email_service.brevo_api_key = None
 
     ws_id = "ws-smtp-test-001"
     async with AsyncSessionLocal() as db:
@@ -48,6 +49,7 @@ async def run_all_tests():
         # Test connection check with credentials
         test_svc = GmailSMTPService()
         test_svc.resend_api_key = None
+        test_svc.brevo_api_key = None
         test_svc.email = "testsender@gmail.com"
         test_svc.password = "abcd efgh ijkl mnop"
         

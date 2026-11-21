@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 import httpx
 import logging
 from typing import Dict, Any, Optional, List
@@ -18,10 +19,10 @@ class GroqService:
         messages: List[Dict[str, str]],
         response_format: Optional[Dict[str, str]] = None,
         temperature: float = 0.1,
-        max_tokens: int = 4096
+        max_tokens: int = 1500
     ) -> Dict[str, Any]:
         """
-        Executes a chat completion call with Groq.
+        Executes a chat completion call with Groq with automatic retry on 429 rate limit.
         """
         if not self.api_key:
             logger.warning("GROQ_API_KEY not configured. Falling back to local agent pipeline.")
@@ -42,31 +43,40 @@ class GroqService:
         if response_format:
             payload["response_format"] = response_format
 
+        max_retries = 2
         async with httpx.AsyncClient(timeout=45.0) as client:
-            try:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    content = data["choices"][0]["message"]["content"]
-                    usage = data.get("usage", {})
-                    return {
-                        "content": content,
-                        "usage": usage,
-                        "fallback": False
-                    }
-                else:
-                    logger.error(f"Groq API error {response.status_code}: {response.text}")
-                    return {
-                        "fallback": True,
-                        "error": f"Groq HTTP {response.status_code}: {response.text}"
-                    }
-            except Exception as e:
-                logger.error(f"Exception during Groq completion: {str(e)}")
-                return {"fallback": True, "error": str(e)}
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        content = data["choices"][0]["message"]["content"]
+                        usage = data.get("usage", {})
+                        return {
+                            "content": content,
+                            "usage": usage,
+                            "fallback": False
+                        }
+                    elif response.status_code == 429 and attempt < max_retries:
+                        logger.warning(f"Groq API 429 rate limit (attempt {attempt + 1}/{max_retries + 1}). Backing off for 4 seconds...")
+                        await asyncio.sleep(4.0)
+                        continue
+                    else:
+                        logger.error(f"Groq API error {response.status_code}: {response.text}")
+                        return {
+                            "fallback": True,
+                            "error": f"Groq HTTP {response.status_code}: {response.text}"
+                        }
+                except Exception as e:
+                    if attempt < max_retries:
+                        await asyncio.sleep(2.0)
+                        continue
+                    logger.error(f"Exception during Groq completion: {str(e)}")
+                    return {"fallback": True, "error": str(e)}
 
     async def transcribe_audio(self, audio_bytes: bytes, filename: str = "meeting.webm") -> Optional[str]:
         """

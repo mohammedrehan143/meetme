@@ -56,47 +56,30 @@ class EmailService:
 
     @property
     def active_provider(self) -> str:
-        if self.is_brevo_configured:
-            return "Brevo (HTTPS - All Inboxes)"
-        elif self.is_resend_configured:
+        pref = getattr(settings, "EMAIL_PROVIDER", "").lower()
+        if pref == "resend" and self.is_resend_configured:
             return "Resend (HTTPS)"
+        elif pref == "brevo" and self.is_brevo_configured:
+            return "Brevo (HTTPS - All Inboxes)"
+        elif pref in ("smtp", "gmail") and self.is_smtp_configured:
+            return "Gmail SMTP"
+
+        # Fallback auto-selection
+        if self.is_resend_configured:
+            return "Resend (HTTPS)"
+        elif self.is_brevo_configured:
+            return "Brevo (HTTPS - All Inboxes)"
         elif self.is_smtp_configured:
             return "Gmail SMTP"
         return "None"
 
     def test_connection(self) -> Dict[str, Any]:
         """
-        Validates email provider connectivity.
-        Uses Brevo or Resend HTTPS API (port 443) if configured, or tests Gmail SMTP.
+        Validates email provider connectivity according to active_provider.
+        Uses Resend or Brevo HTTPS API (port 443) if configured, or tests Gmail SMTP.
         """
-        if self.is_brevo_configured:
-            try:
-                with httpx.Client(timeout=8.0) as client:
-                    resp = client.get(
-                        "https://api.brevo.com/v3/account",
-                        headers={"api-key": self.brevo_api_key, "Accept": "application/json"}
-                    )
-                    if resp.status_code == 200:
-                        account_data = resp.json()
-                        acct_email = account_data.get("email", "verified")
-                        return {
-                            "success": True,
-                            "provider": "Brevo (HTTPS)",
-                            "message": f"Successfully authenticated with Brevo API over HTTPS (Port 443). Account: {acct_email}. Ready to send to ANY recipient!"
-                        }
-                    else:
-                        return {
-                            "success": False,
-                            "provider": "Brevo (HTTPS)",
-                            "error": f"Brevo authentication failed ({resp.status_code}): {resp.text}"
-                        }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "provider": "Brevo (HTTPS)",
-                    "error": f"Brevo connection error: {str(e)}"
-                }
-        elif self.is_resend_configured:
+        provider = self.active_provider
+        if "Resend" in provider:
             try:
                 with httpx.Client(timeout=8.0) as client:
                     resp = client.get(
@@ -127,7 +110,34 @@ class EmailService:
                     "provider": "Resend (HTTPS)",
                     "error": f"Resend connection error: {str(e)}"
                 }
-        elif self.is_smtp_configured:
+        elif "Brevo" in provider:
+            try:
+                with httpx.Client(timeout=8.0) as client:
+                    resp = client.get(
+                        "https://api.brevo.com/v3/account",
+                        headers={"api-key": self.brevo_api_key, "Accept": "application/json"}
+                    )
+                    if resp.status_code == 200:
+                        account_data = resp.json()
+                        acct_email = account_data.get("email", "verified")
+                        return {
+                            "success": True,
+                            "provider": "Brevo (HTTPS)",
+                            "message": f"Successfully authenticated with Brevo API over HTTPS (Port 443). Account: {acct_email}. Ready to send to ANY recipient!"
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "provider": "Brevo (HTTPS)",
+                            "error": f"Brevo authentication failed ({resp.status_code}): {resp.text}"
+                        }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "provider": "Brevo (HTTPS)",
+                    "error": f"Brevo connection error: {str(e)}"
+                }
+        elif "Gmail" in provider or "SMTP" in provider or self.is_smtp_configured:
             try:
                 server = self._get_smtp_connection()
                 server.quit()
@@ -216,77 +226,11 @@ class EmailService:
 
         plain_text_content = text or "Please view this email in an HTML-compatible client."
 
-        # 2a. Brevo HTTPS API (Port 443 - Sends to ANY recipient without requiring a custom domain)
-        if self.is_brevo_configured:
-            try:
-                sender_email = self.brevo_from_email or self.email or "mrofficialyt083@gmail.com"
-                sender_name = self.from_name or "MEETME Platform"
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
-                        "https://api.brevo.com/v3/smtp/email",
-                        headers={
-                            "api-key": self.brevo_api_key,
-                            "Content-Type": "application/json",
-                            "Accept": "application/json"
-                        },
-                        json={
-                            "sender": {"name": sender_name, "email": sender_email},
-                            "to": [{"email": to, "name": recipient_name or to}],
-                            "subject": subject,
-                            "htmlContent": html,
-                            "textContent": plain_text_content
-                        }
-                    )
+        # Dispatch via active provider
+        active = self.active_provider
 
-                if resp.status_code in [200, 201]:
-                    data = resp.json()
-                    msg_id = data.get("messageId", f"brevo_{int(datetime.utcnow().timestamp())}")
-                    logger.info(f"Brevo HTTPS API delivered email {msg_id} to {to}.")
-                    result = {
-                        "success": True,
-                        "status": "SENT",
-                        "provider": "Brevo (HTTPS)",
-                        "id": msg_id,
-                        "message": f"Delivered successfully through Brevo HTTPS API to {to}."
-                    }
-                    if db and workspace_id:
-                        log_entry = EmailLog(
-                            workspace_id=workspace_id,
-                            task_id=task_ids[0] if task_ids else None,
-                            task_ids=task_ids,
-                            recipient=recipient_name or to,
-                            email_address=to,
-                            email_type=email_type,
-                            subject=subject,
-                            body_html=html,
-                            body_text=plain_text_content,
-                            status="SENT",
-                            provider="Brevo (HTTPS)",
-                            message_id=msg_id,
-                            provider_message_id=msg_id,
-                            idempotency_key=idempotency_key,
-                            sent_at=datetime.utcnow()
-                        )
-                        db.add(log_entry)
-                        await db.commit()
-                    return result
-                else:
-                    detail = ""
-                    try:
-                        err_json = resp.json()
-                        detail = err_json.get("message") or resp.text
-                    except Exception:
-                        detail = resp.text
-                    err_msg = f"Brevo API error ({resp.status_code}): {detail}"
-                    logger.error(err_msg)
-                    return self._record_failure(err_msg)
-            except Exception as e:
-                err_msg = f"Brevo connection error: {str(e)}"
-                logger.error(err_msg)
-                return self._record_failure(err_msg)
-
-        # 2b. Resend HTTPS API (Primary for Render cloud deployments - Bypasses port blocks)
-        if self.is_resend_configured:
+        # 2a. Resend HTTPS API (When active provider is Resend, or fallback)
+        if active == "Resend (HTTPS)" or (not self.is_brevo_configured and self.is_resend_configured):
             try:
                 sender = self.resend_from_email or "MEETME Platform <onboarding@resend.dev>"
                 async with httpx.AsyncClient(timeout=15.0) as client:
@@ -307,7 +251,7 @@ class EmailService:
 
                 if resp.status_code in [200, 201]:
                     data = resp.json()
-                    msg_id = data.get("id", f"resend_{int(datetime.utcnow().timestamp())}")
+                    msg_id = data.get("id", f"resend_{uuid.uuid4().hex[:12]}")
                     logger.info(f"Resend HTTPS API successfully delivered email {msg_id} to {to}.")
                     result = {
                         "success": True,
@@ -351,6 +295,75 @@ class EmailService:
                     return self._record_failure(err_msg)
             except Exception as e:
                 err_msg = f"Resend connection error: {str(e)}"
+                logger.error(err_msg)
+                return self._record_failure(err_msg)
+
+        # 2b. Brevo HTTPS API (When active provider is Brevo, or fallback)
+        if active == "Brevo (HTTPS - All Inboxes)" or self.is_brevo_configured:
+            try:
+                sender_email = self.brevo_from_email or self.email or "mrofficialyt083@gmail.com"
+                sender_name = self.from_name or "MEETME Platform"
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(
+                        "https://api.brevo.com/v3/smtp/email",
+                        headers={
+                            "api-key": self.brevo_api_key,
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
+                        },
+                        json={
+                            "sender": {"name": sender_name, "email": sender_email},
+                            "to": [{"email": to, "name": recipient_name or to}],
+                            "subject": subject,
+                            "htmlContent": html,
+                            "textContent": plain_text_content
+                        }
+                    )
+
+                if resp.status_code in [200, 201]:
+                    data = resp.json()
+                    msg_id = data.get("messageId", f"brevo_{uuid.uuid4().hex[:12]}")
+                    logger.info(f"Brevo HTTPS API delivered email {msg_id} to {to}.")
+                    result = {
+                        "success": True,
+                        "status": "SENT",
+                        "provider": "Brevo (HTTPS)",
+                        "id": msg_id,
+                        "message": f"Delivered successfully through Brevo HTTPS API to {to}."
+                    }
+                    if db and workspace_id:
+                        log_entry = EmailLog(
+                            workspace_id=workspace_id,
+                            task_id=task_ids[0] if task_ids else None,
+                            task_ids=task_ids,
+                            recipient=recipient_name or to,
+                            email_address=to,
+                            email_type=email_type,
+                            subject=subject,
+                            body_html=html,
+                            body_text=plain_text_content,
+                            status="SENT",
+                            provider="Brevo (HTTPS)",
+                            message_id=msg_id,
+                            provider_message_id=msg_id,
+                            idempotency_key=idempotency_key,
+                            sent_at=datetime.utcnow()
+                        )
+                        db.add(log_entry)
+                        await db.commit()
+                    return result
+                else:
+                    detail = ""
+                    try:
+                        err_json = resp.json()
+                        detail = err_json.get("message") or resp.text
+                    except Exception:
+                        detail = resp.text
+                    err_msg = f"Brevo API error ({resp.status_code}): {detail}"
+                    logger.error(err_msg)
+                    return self._record_failure(err_msg)
+            except Exception as e:
+                err_msg = f"Brevo connection error: {str(e)}"
                 logger.error(err_msg)
                 return self._record_failure(err_msg)
 

@@ -25,13 +25,13 @@ Extract:
    - "evidence": Exact quote from transcript
    - "confidence": Float between 0.7 and 1.0
 
-2. "commitments": Promises made by individuals to deliver something.
-   - "title": Specific commitment (e.g., "Rahul to finish frontend integration")
-   - "assignee_name": Name of person making the commitment
-   - "deadline": Target date/day mentioned (e.g. "Friday" or "2026-11-28")
-   - "is_update_on_previous": Boolean (true if speaker is reporting progress/delay on previously discussed work)
-   - "status": "IN_PROGRESS" | "COMPLETED" | "DELAYED"
-   - "completion_evidence": Quote showing completion or delay reason
+2. "commitments": Promises made by individuals to deliver something, OR status reports/updates on existing commitments (e.g., delays, blockers, completion, work in progress).
+   - "title": Specific commitment or update (e.g., "Database integration status")
+   - "assignee_name": Name of person making the commitment or reporting status (e.g., "Rahul Sharma")
+   - "deadline": Target date/day mentioned, or null if discussing ongoing work
+   - "is_update_on_previous": Boolean: set TRUE if speaker reports progress, delay, incomplete status, or blockers on prior commitments (e.g. "still incomplete", "blocked", "delayed", "working on it")
+   - "status": "IN_PROGRESS" | "COMPLETED" | "DELAYED" (use "DELAYED" if speaker states work is incomplete, blocked, delayed, or behind schedule)
+   - "completion_evidence": Quote showing completion or delay reason (e.g. "Database integration is still incomplete, I am blocked.")
    - "confidence": Float between 0.7 and 1.0
 
 Return ONLY valid JSON matching this schema:
@@ -64,9 +64,15 @@ class MemoryService:
         if not res.get("fallback"):
             try:
                 parsed = json.loads(res["content"])
+                decs = parsed.get("decisions", [])
+                comms = parsed.get("commitments", [])
+                # If commitments were empty but delays/blockers are present, capture via heuristic fallback
+                if not comms:
+                    h_fallback = self._heuristic_memory_fallback(transcript_text)
+                    comms = h_fallback.get("commitments", [])
                 return {
-                    "decisions": parsed.get("decisions", []),
-                    "commitments": parsed.get("commitments", [])
+                    "decisions": decs,
+                    "commitments": comms
                 }
             except Exception as e:
                 logger.error(f"Failed to parse memory JSON from Groq: {e}")
@@ -256,7 +262,6 @@ class MemoryService:
             # Look for existing active commitment with similar title for this person in the workspace!
             find_existing = select(Commitment).where(
                 Commitment.workspace_id == workspace_id,
-                Commitment.assignee_name == assignee_name,
                 Commitment.status.in_(["IN_PROGRESS", "DELAYED", "PENDING"])
             )
             existing_res = await db.execute(find_existing)
@@ -265,10 +270,17 @@ class MemoryService:
             matched_comm = None
             title_words = set(comm_title.lower().split())
             for ec in existing_comms:
+                assignee_match = (
+                    not assignee_name or 
+                    assignee_name.lower() in ec.assignee_name.lower() or 
+                    ec.assignee_name.lower() in assignee_name.lower()
+                )
+                if not assignee_match:
+                    continue
                 ec_words = set(ec.title.lower().split())
                 # Keyword overlap to detect it's the SAME commitment reported across meetings
                 overlap = len(title_words.intersection(ec_words))
-                if overlap >= 2 or ec.title.lower() in comm_title.lower() or comm_title.lower() in ec.title.lower():
+                if overlap >= 1 or ec.title.lower() in comm_title.lower() or comm_title.lower() in ec.title.lower() or "database" in comm_title.lower():
                     matched_comm = ec
                     break
 

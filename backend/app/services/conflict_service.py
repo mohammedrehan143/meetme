@@ -117,8 +117,18 @@ class ConflictService:
         for c in llm_conflicts:
             prev_id = c.get("previous_decision_id")
             prev_dec = next((hd for hd in historical_decisions if hd.id == prev_id), None)
+            if not prev_dec:
+                for hd in historical_decisions:
+                    if str(prev_id).lower() in hd.title.lower() or hd.title.lower() in str(prev_id).lower():
+                        prev_dec = hd
+                        break
+                if not prev_dec and len(historical_decisions) == 1:
+                    prev_dec = historical_decisions[0]
+
             new_title = c.get("new_decision_title", "")
             matching_new = next((nd for nd in new_decisions if nd.get("title", "") == new_title), None)
+            if not matching_new and len(new_decisions) == 1:
+                matching_new = new_decisions[0]
 
             if not prev_dec:
                 continue
@@ -154,7 +164,7 @@ class ConflictService:
             # Create an Approval record so conflict appears in the Human Approval Gate!
             approval = Approval(
                 workspace_id=workspace_id,
-                task_id=f"conflict-{conflict_obj.id}",
+                task_id=None,
                 meeting_id=current_meeting_id,
                 action_category="DECISION_RESOLUTION",
                 target_platform="INTERNAL",
@@ -179,6 +189,63 @@ class ConflictService:
             )
             db.add(approval)
             persisted_conflicts.append(conflict_obj)
+
+        if not persisted_conflicts:
+            rule_conflicts = self._rule_based_conflict_check(historical_decisions, new_decisions)
+            for c in rule_conflicts:
+                prev_id = c.get("previous_decision_id")
+                prev_dec = next((hd for hd in historical_decisions if hd.id == prev_id), None)
+                if not prev_dec:
+                    continue
+                new_title = c.get("new_decision_title", "")
+                matching_new = next((nd for nd in new_decisions if nd.get("title", "") == new_title), None)
+                if not matching_new and new_decisions:
+                    matching_new = new_decisions[0]
+
+                conflict_obj = DecisionConflict(
+                    workspace_id=workspace_id,
+                    previous_decision_id=prev_dec.id,
+                    new_decision_id=matching_new.get("id") if matching_new else None,
+                    previous_meeting_id=prev_dec.meeting_id,
+                    new_meeting_id=current_meeting_id,
+                    conflict_type=c.get("conflict_type", "GENUINE_CONTRADICTION"),
+                    explanation=c.get("explanation", "Contradicts previous active decision."),
+                    confidence=float(c.get("confidence", 0.95)),
+                    suggested_resolution=c.get("suggested_resolution", "Review and choose whether to accept the new decision or retain previous consensus."),
+                    status="UNRESOLVED",
+                    source_evidence_prev=prev_dec.evidence_quote,
+                    source_evidence_new=matching_new.get("evidence") if matching_new else ""
+                )
+                db.add(conflict_obj)
+                await db.flush()
+
+                approval = Approval(
+                    workspace_id=workspace_id,
+                    task_id=None,
+                    meeting_id=current_meeting_id,
+                    action_category="DECISION_RESOLUTION",
+                    target_platform="INTERNAL",
+                    status="PENDING",
+                    proposed_payload={
+                        "conflict_id": conflict_obj.id,
+                        "conflict_type": conflict_obj.conflict_type,
+                        "previous_decision": {
+                            "id": prev_dec.id,
+                            "title": prev_dec.title,
+                            "summary": prev_dec.summary,
+                            "evidence": prev_dec.evidence_quote
+                        },
+                        "new_decision": {
+                            "title": matching_new.get("title", new_title) if matching_new else new_title,
+                            "summary": matching_new.get("summary", new_title) if matching_new else new_title,
+                            "evidence": matching_new.get("evidence", "") if matching_new else ""
+                        },
+                        "explanation": conflict_obj.explanation,
+                        "suggested_resolution": conflict_obj.suggested_resolution
+                    }
+                )
+                db.add(approval)
+                persisted_conflicts.append(conflict_obj)
             logger.warning(f"DECISION CONFLICT DETECTED in workspace {workspace_id}: '{prev_dec.title}' vs '{new_title}'")
 
         await db.commit()

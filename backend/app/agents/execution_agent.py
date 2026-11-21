@@ -1,12 +1,13 @@
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from backend.app.models.schema import (
     Task, Approval, EmailLog, Reminder, AutomationLog, Notification,
-    ExternalIntegration, ExternalIssueSync
+    ExternalIntegration, ExternalIssueSync, WorkspaceMember
 )
 from backend.app.services.email_service import email_service
 from backend.app.services.jira_service import jira_service
@@ -36,6 +37,10 @@ class ExecutionAgent:
 
         if not approval:
             raise ValueError(f"Approval {approval_id} not found.")
+
+        # STRICT HUMAN APPROVAL GATE: Rejected actions must NEVER execute
+        if approval.status == "REJECTED":
+            raise ValueError(f"Approval {approval_id} cannot be executed because it has been REJECTED.")
 
         # Handle Decision Conflict Resolution approvals
         if getattr(approval, "action_category", "") == "DECISION_RESOLUTION" or str(approval.task_id or "").startswith("conflict-"):
@@ -96,6 +101,18 @@ class ExecutionAgent:
 
         task.status = "APPROVED"
         task.updated_at = datetime.utcnow()
+
+        # Auto-resolve assignee_email from WorkspaceMember if missing
+        if not task.assignee_email and task.assignee_name and task.workspace_id:
+            m_res = await db.execute(
+                select(WorkspaceMember).where(
+                    WorkspaceMember.workspace_id == task.workspace_id,
+                    func.lower(WorkspaceMember.full_name) == func.lower(task.assignee_name.strip())
+                )
+            )
+            m = m_res.scalar_one_or_none()
+            if m and m.email:
+                task.assignee_email = m.email
 
         # 4. Update approval record
         approval.status = "APPROVED"
@@ -189,68 +206,104 @@ class ExecutionAgent:
         email_id = None
         email_status = "SKIPPED"
         error_msg = None
-        idempotency_key = f"task_assignment_{task.id}_{approval.id}_{task.assignee_email or 'none'}_{int(datetime.utcnow().timestamp())}"
+        idempotency_key = f"task_assignment_{task.id}_{approval.id}_{task.assignee_email or 'none'}"
 
         if task.assignee_email:
-            # Generate fresh, high-precision assignment email template
-            email_content = email_agent.generate_task_assignment_email(
-                task={
-                    "id": task.id,
-                    "title": task.title,
-                    "description": task.description,
-                    "assignee_name": task.assignee_name or "Team Member",
-                    "deadline": task.deadline,
-                    "priority": task.priority,
-                    "evidence_quote": task.evidence_quote,
-                },
-                meeting_title=payload.get("meeting_title", "MEETME Execution Sync")
-            )
+            # Deterministic idempotency check: prevent duplicate dispatch
+            existing_email = (await db.execute(
+                select(EmailLog).where(
+                    EmailLog.idempotency_key == idempotency_key,
+                    EmailLog.status.in_(["SENT", "QUEUED_DEV", "QUEUED_LOCAL", "ALREADY_SENT"])
+                )
+            )).scalar_one_or_none()
+            if existing_email:
+                logger.info(f"Duplicate email send skipped via idempotency key: {idempotency_key}")
+                email_sent = True
+                email_status = "ALREADY_SENT"
+                email_id = existing_email.message_id or existing_email.id
+            else:
+                # Generate fresh, high-precision assignment email template
+                email_content = email_agent.generate_task_assignment_email(
+                    task={
+                        "id": task.id,
+                        "title": task.title,
+                        "description": task.description,
+                        "assignee_name": task.assignee_name or "Team Member",
+                        "deadline": task.deadline,
+                        "priority": task.priority,
+                        "evidence_quote": task.evidence_quote,
+                    },
+                    meeting_title=payload.get("meeting_title", "MEETME Execution Sync")
+                )
 
-            # Send via Gmail SMTP service with idempotency key
-            email_res = await email_service.send_email(
-                to=task.assignee_email,
-                subject=email_content.get("subject", f"Action Item Assigned: {task.title}"),
-                html=email_content.get("html", "<p>Task Assigned</p>"),
-                text=email_content.get("text", ""),
-                recipient_name=task.assignee_name,
-                email_type="TASK_ASSIGNMENT",
-                task_ids=[task.id],
-                idempotency_key=idempotency_key
-            )
+                # Send via active email service with idempotency key
+                email_res = await email_service.send_email(
+                    to=task.assignee_email,
+                    subject=email_content.get("subject", f"Action Item Assigned: {task.title}"),
+                    html=email_content.get("html", "<p>Task Assigned</p>"),
+                    text=email_content.get("text", ""),
+                    recipient_name=task.assignee_name,
+                    email_type="TASK_ASSIGNMENT",
+                    task_ids=[task.id],
+                    idempotency_key=idempotency_key
+                )
 
-            email_status = email_res.get("status", "FAILED")
-            email_id = email_res.get("id")
-            error_msg = email_res.get("error")
-            email_sent = email_res.get("success", False)
+                email_status = email_res.get("status", "FAILED")
+                email_id = email_res.get("id")
+                error_msg = email_res.get("error")
+                email_sent = email_res.get("success", False)
 
-            # Persist EmailLog with Gmail SMTP provider and task tracking
-            email_log = EmailLog(
-                workspace_id=task.workspace_id,
-                task_id=task.id,
-                task_ids=[task.id],
-                meeting_id=task.meeting_id,
-                recipient=task.assignee_name or "Team Member",
-                email_address=task.assignee_email,
-                email_type="TASK_ASSIGNMENT",
-                subject=email_content.get("subject", f"Action Item Assigned: {task.title}"),
-                body_html=email_content.get("html", ""),
-                body_text=email_content.get("text", ""),
-                status=email_status,
-                provider=email_res.get("provider", "Gmail SMTP"),
-                message_id=email_id,
-                provider_message_id=email_id,
-                idempotency_key=idempotency_key,
-                error_message=error_msg,
-                sent_at=datetime.utcnow() if email_sent else None
-            )
-            db.add(email_log)
+                # Persist EmailLog with active provider and task tracking
+                email_log = EmailLog(
+                    workspace_id=task.workspace_id,
+                    task_id=task.id,
+                    task_ids=[task.id],
+                    meeting_id=task.meeting_id,
+                    recipient=task.assignee_name or "Team Member",
+                    email_address=task.assignee_email,
+                    email_type="TASK_ASSIGNMENT",
+                    subject=email_content.get("subject", f"Action Item Assigned: {task.title}"),
+                    body_html=email_content.get("html", ""),
+                    body_text=email_content.get("text", ""),
+                    status=email_status,
+                    provider=email_res.get("provider", email_service.active_provider),
+                    message_id=email_id,
+                    provider_message_id=email_id,
+                    idempotency_key=idempotency_key,
+                    error_message=error_msg,
+                    sent_at=datetime.utcnow() if email_sent else None
+                )
+                db.add(email_log)
 
         # 6. Schedule persistent multi-tier reminders (24h before, deadline day, 1 day after overdue)
         scheduled_reminders = []
         if task.deadline and task.assignee_email:
             try:
-                # Parse deadline (YYYY-MM-DD)
-                d_date = datetime.strptime(task.deadline, "%Y-%m-%d")
+                # Flexible deadline parsing: try ISO first, then relative dates
+                d_date = None
+                raw_dl = str(task.deadline).strip().lower()
+                if re.match(r"^\d{4}-\d{2}-\d{2}", raw_dl):
+                    d_date = datetime.strptime(raw_dl[:10], "%Y-%m-%d")
+                elif "friday" in raw_dl:
+                    days_ahead = (4 - datetime.utcnow().weekday()) % 7
+                    if days_ahead <= 0:
+                        days_ahead += 7
+                    d_date = datetime.utcnow() + timedelta(days=days_ahead)
+                elif "monday" in raw_dl:
+                    days_ahead = (0 - datetime.utcnow().weekday()) % 7
+                    if days_ahead <= 0:
+                        days_ahead += 7
+                    d_date = datetime.utcnow() + timedelta(days=days_ahead)
+                elif "tomorrow" in raw_dl:
+                    d_date = datetime.utcnow() + timedelta(days=1)
+                elif "next week" in raw_dl:
+                    d_date = datetime.utcnow() + timedelta(days=7)
+                else:
+                    try:
+                        from dateutil import parser as date_parser
+                        d_date = date_parser.parse(task.deadline, fuzzy=True)
+                    except Exception:
+                        d_date = datetime.utcnow() + timedelta(days=3)
                 
                 # 1. Pre-deadline reminder (24 hours before 9:00 AM of deadline day)
                 pre_reminder_time = d_date - timedelta(days=1) + timedelta(hours=9)

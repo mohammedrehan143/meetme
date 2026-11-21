@@ -64,6 +64,12 @@ export const api = {
     }
     return res.json();
   },
+  async processMeeting(id: string, transcriptText?: string): Promise<any> {
+    return fetchJson(`${API_BASE}/meetings/${id}/process`, {
+      method: "POST",
+      body: JSON.stringify({ transcript_text: transcriptText || "" })
+    });
+  },
 
   // Tasks
   async getTasks(params?: { status?: string; priority?: string; search?: string }): Promise<Task[]> {
@@ -265,7 +271,10 @@ export const api = {
       body: JSON.stringify(data)
     });
   },
-  async sendDigest(digestId: string): Promise<any> {
-    return fetchJson(`${API_BASE}/digest/${digestId}/send`, { method: "POST" });
+  async sendDigest(digestId: string, recipientEmail?: string): Promise<any> {
+    return fetchJson(`${API_BASE}/digest/${digestId}/send`, {
+      method: "POST",
+      body: JSON.stringify({ recipient_email: recipientEmail })
+    });
   }
 };

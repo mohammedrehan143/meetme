@@ -101,14 +101,14 @@ export default function WeeklyDigestPage() {
     const currentMember = team.find(m => m.id === selectedMemberId);
     const targetEmail = prompt(
       "Confirm destination email address for this personalized weekly digest:",
-      currentMember?.email || "25ug1byai034@bmsit.in"
+      currentMember?.email || ""
     );
     if (!targetEmail) return;
 
     setSending(true);
     try {
-      await api.sendDigest(digestId);
-      alert(`Weekly digest dispatched successfully to ${targetEmail} via Brevo engine!`);
+      await api.sendDigest(digestId, targetEmail);
+      alert(`Weekly digest dispatched successfully to ${targetEmail}!`);
       if (selectedMemberId) {
         await loadDigestsForMember(selectedMemberId);
       }

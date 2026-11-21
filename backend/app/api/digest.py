@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from pydantic import BaseModel
@@ -122,13 +122,18 @@ async def generate_digests(
         "digests": generated
     }
 
+class SendDigestRequest(BaseModel):
+    recipient_email: Optional[str] = None
+
 @router.post("/{digest_id}/send")
 async def send_digest_endpoint(
     digest_id: str,
+    payload: Optional[SendDigestRequest] = Body(None),
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        res = await digest_service.send_digest(db=db, digest_id=digest_id)
+        custom_email = payload.recipient_email if payload else None
+        res = await digest_service.send_digest(db=db, digest_id=digest_id, custom_recipient_email=custom_email)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
