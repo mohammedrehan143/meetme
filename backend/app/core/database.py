@@ -9,6 +9,11 @@ logger = logging.getLogger("meetme.database")
 # Handle Supabase vs Local SQLite URLs
 raw_url = settings.DATABASE_URL.strip()
 
+# Handle placeholder password gracefully
+if "[YOUR-PASSWORD]" in raw_url or "yourpassword" in raw_url:
+    logger.warning("Supabase DATABASE_URL contains placeholder '[YOUR-PASSWORD]'. Using local Async SQLite until password is provided in .env.")
+    raw_url = "sqlite+aiosqlite:///./meetme.db"
+
 # Normalize postgres URL schemes to asyncpg
 if raw_url.startswith("postgres://"):
     raw_url = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)

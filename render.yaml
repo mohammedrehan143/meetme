@@ -2,7 +2,7 @@ services:
   - type: web
     name: meetme-backend
     runtime: python
-    region: oregon
+    region: singapore
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
@@ -12,13 +12,13 @@ services:
         value: .
       - key: APP_ENV
         value: production
-      - key: DATABASE_URL
-        sync: false
       - key: SUPABASE_URL
-        sync: false
+        value: https://ikgsahbuhaucueffphxs.supabase.co
       - key: SUPABASE_ANON_KEY
-        sync: false
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlrZ3NhaGJ1aGF1Y3VlZmZwaHhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NDM3OTcsImV4cCI6MjEwODIxOTc5N30.b0zsdmhPRIcU2ILFEUGBSW3jOQIIrRwKlkH_j5rC6Ks
       - key: SUPABASE_SERVICE_ROLE_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlrZ3NhaGJ1aGF1Y3VlZmZwaHhzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MjY0Mzc5NywiZXhwIjoyMTA4MjE5Nzk3fQ.fciRFD-p9uW2f2k0yvU8J66AefqzR9AjqWQ5YceMujM
+      - key: DATABASE_URL
         sync: false
       - key: GROQ_API_KEY
         sync: false
