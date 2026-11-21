@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Settings, Cpu, Mail, Database, RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck, Key, ExternalLink } from "lucide-react";
+import { Settings, Cpu, Mail, Database, RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck, Key, ExternalLink, Send, Zap } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function SettingsPage() {
@@ -13,6 +13,15 @@ export default function SettingsPage() {
   const [geminiKey, setGeminiKey] = useState("");
   const [geminiModel, setGeminiModel] = useState("gemini-1.5-pro");
   
+  // Resend Cloud HTTP API State (Port 443 - Recommended for Render)
+  const [resendApiKey, setResendApiKey] = useState("");
+  const [resendFromEmail, setResendFromEmail] = useState("MEETME Platform <onboarding@resend.dev>");
+  const [testEmailRecipient, setTestEmailRecipient] = useState("25ug1byai034@bmsit.in");
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [dispatchingTest, setDispatchingTest] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<{ success: boolean; message?: string; error?: string; provider?: string } | null>(null);
+  const [dispatchTestResult, setDispatchTestResult] = useState<{ success: boolean; message?: string; error?: string; provider?: string; id?: string } | null>(null);
+
   // Gmail SMTP State
   const [smtpEmail, setSmtpEmail] = useState("");
   const [smtpPassword, setSmtpPassword] = useState("");
@@ -21,8 +30,6 @@ export default function SettingsPage() {
   const [smtpFromName, setSmtpFromName] = useState("MEETME Intelligence");
 
   const [saving, setSaving] = useState(false);
-  const [testingSmtp, setTestingSmtp] = useState(false);
-  const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,6 +42,7 @@ export default function SettingsPage() {
       setConfig(data);
       if (data?.groq?.model) setGroqModel(data.groq.model);
       if (data?.gemini?.model) setGeminiModel(data.gemini.model);
+      if (data?.resend?.from_email) setResendFromEmail(data.resend.from_email);
       if (data?.smtp?.email) setSmtpEmail(data.smtp.email);
       if (data?.smtp?.host) setSmtpHost(data.smtp.host);
       if (data?.smtp?.port) setSmtpPort(data.smtp.port);
@@ -54,6 +62,8 @@ export default function SettingsPage() {
         groq_model: groqModel,
         gemini_api_key: geminiKey.trim() || undefined,
         gemini_model: geminiModel,
+        resend_api_key: resendApiKey.trim() || undefined,
+        resend_from_email: resendFromEmail.trim() || undefined,
         smtp_email: smtpEmail.trim() || undefined,
         smtp_password: smtpPassword.trim() || undefined,
         smtp_host: smtpHost.trim() || undefined,
@@ -63,6 +73,7 @@ export default function SettingsPage() {
       setMessage("Configuration updated successfully.");
       setGroqKey("");
       setGeminiKey("");
+      setResendApiKey("");
       setSmtpPassword("");
       await loadSettings();
     } catch (err: any) {
@@ -72,19 +83,39 @@ export default function SettingsPage() {
     }
   };
 
-  const handleTestSmtp = async () => {
-    setTestingSmtp(true);
-    setSmtpTestResult(null);
+  const handleTestEmailConnection = async () => {
+    setTestingEmail(true);
+    setEmailTestResult(null);
     try {
-      const res = await api.testSmtp();
-      setSmtpTestResult(res);
+      const res = await api.testEmailConnection();
+      setEmailTestResult(res);
     } catch (err: any) {
-      setSmtpTestResult({
+      setEmailTestResult({
         success: false,
-        error: err.message || "Failed to test SMTP connection."
+        error: err.message || "Failed to test email connection."
       });
     } finally {
-      setTestingSmtp(false);
+      setTestingEmail(false);
+    }
+  };
+
+  const handleSendTestDispatch = async () => {
+    if (!testEmailRecipient.trim()) {
+      alert("Please enter a destination email address.");
+      return;
+    }
+    setDispatchingTest(true);
+    setDispatchTestResult(null);
+    try {
+      const res = await api.testEmailDispatch(testEmailRecipient.trim());
+      setDispatchTestResult(res);
+    } catch (err: any) {
+      setDispatchTestResult({
+        success: false,
+        error: err.message || "Failed to dispatch test email."
+      });
+    } finally {
+      setDispatchingTest(false);
     }
   };
 
@@ -205,19 +236,144 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Native Gmail SMTP Settings */}
+        {/* Resend HTTP Email Engine (Recommended for Render & Cloud Deployments) */}
         <div className="p-5 rounded bg-bg-card border border-border-subtle space-y-4">
           <div className="flex items-center justify-between border-b border-border-subtle pb-3">
             <div className="flex items-center gap-2">
-              <Mail size={16} className="text-accent-neon" />
+              <Zap size={16} className="text-accent-neon" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
-                Native Gmail SMTP Email Service (STARTTLS Port 587)
+                Resend Cloud HTTP Email Service (Port 443 HTTPS - Render Compatible)
               </h3>
             </div>
             <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${
-              config?.smtp?.is_configured ? "bg-accent-neon/20 text-accent-neon" : "bg-bg-elevated text-text-muted"
+              config?.resend?.is_configured ? "bg-accent-neon/20 text-accent-neon" : "bg-bg-elevated text-text-muted"
             }`}>
-              {config?.smtp?.is_configured ? "GMAIL SMTP ACTIVE" : "DEV / LOCAL QUEUE MODE"}
+              {config?.resend?.is_configured ? "RESEND ACTIVE (PORT 443)" : "STANDBY / RECOMMENDED FOR RENDER"}
+            </span>
+          </div>
+
+          <div className="p-3 bg-accent-orange/10 border border-accent-orange/20 rounded text-[11px] text-text-secondary leading-relaxed">
+            <strong className="text-accent-orange font-semibold">Render Free Tier Network Requirement: </strong>
+            Render cloud containers strictly drop outbound raw TCP connections on SMTP ports 25, 465, and 587. 
+            Resend dispatches emails via REST API over standard HTTPS (Port 443), ensuring reliable delivery without firewall blocks.
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="text-text-secondary block mb-1">
+                Resend API Key {config?.resend?.is_configured && `(Current: ${config.resend.masked_key})`}
+              </label>
+              <input
+                type="password"
+                value={resendApiKey}
+                onChange={(e) => setResendApiKey(e.target.value)}
+                placeholder="re_..."
+                className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+              />
+              <span className="text-[10px] text-text-muted mt-1 block">
+                Free tier gives 3,000 emails/month at resend.com (no credit card required).
+              </span>
+            </div>
+
+            <div>
+              <label className="text-text-secondary block mb-1">Sender Address (From)</label>
+              <input
+                type="text"
+                value={resendFromEmail}
+                onChange={(e) => setResendFromEmail(e.target.value)}
+                placeholder="MEETME Platform <onboarding@resend.dev>"
+                className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+              />
+              <span className="text-[10px] text-text-muted mt-1 block">
+                Use <code className="text-accent-neon">onboarding@resend.dev</code> for immediate testing, or your verified domain.
+              </span>
+            </div>
+          </div>
+
+          {/* Test Provider Connection & Live Test Dispatch */}
+          <div className="pt-3 border-t border-border-subtle space-y-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTestEmailConnection}
+                  disabled={testingEmail}
+                  className="px-3.5 py-1.5 rounded text-xs font-semibold bg-bg-elevated border border-border-subtle hover:border-accent-neon text-text-primary flex items-center gap-2 disabled:opacity-50 transition-colors"
+                >
+                  <ShieldCheck size={14} className={testingEmail ? "animate-spin text-accent-neon" : "text-accent-neon"} />
+                  <span>{testingEmail ? "Verifying Provider Connection..." : "Test Active Email Connection"}</span>
+                </button>
+
+                {emailTestResult && (
+                  <span className={`text-xs font-mono px-2.5 py-1 rounded border ${
+                    emailTestResult.success
+                      ? "bg-accent-neon/15 text-accent-neon border-accent-neon/30"
+                      : "bg-red-500/15 text-red-400 border-red-500/30"
+                  }`}>
+                    {emailTestResult.success ? (emailTestResult.message || "Connection verified") : emailTestResult.error}
+                  </span>
+                )}
+              </div>
+
+              <a
+                href="https://resend.com/api-keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-accent-orange hover:underline flex items-center gap-1 font-mono"
+              >
+                <span>Get free API Key at resend.com</span>
+                <ExternalLink size={11} />
+              </a>
+            </div>
+
+            {/* Test Email Dispatch to Destination */}
+            <div className="p-3 bg-bg-elevated rounded border border-border-subtle flex flex-col sm:flex-row items-start sm:items-center gap-2">
+              <span className="text-xs font-mono text-text-secondary whitespace-nowrap">Send Live Test:</span>
+              <input
+                type="email"
+                value={testEmailRecipient}
+                onChange={(e) => setTestEmailRecipient(e.target.value)}
+                placeholder="25ug1byai034@bmsit.in"
+                className="flex-1 bg-bg-card border border-border-subtle rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+              />
+              <button
+                type="button"
+                onClick={handleSendTestDispatch}
+                disabled={dispatchingTest}
+                className="px-3 py-1 rounded text-xs font-semibold bg-accent-neon text-black hover:bg-accent-neon/90 flex items-center gap-1.5 disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                <Send size={12} className={dispatchingTest ? "animate-spin" : ""} />
+                <span>{dispatchingTest ? "Dispatching..." : "Send Test Email"}</span>
+              </button>
+            </div>
+
+            {dispatchTestResult && (
+              <div className={`p-2.5 rounded text-xs font-mono border ${
+                dispatchTestResult.success
+                  ? "bg-accent-neon/10 border-accent-neon/30 text-accent-neon"
+                  : "bg-red-500/10 border-red-500/30 text-red-400"
+              }`}>
+                {dispatchTestResult.success 
+                  ? `Delivered successfully! Provider: ${dispatchTestResult.provider || "Resend"}. Message ID: ${dispatchTestResult.id || "OK"}`
+                  : `Dispatch failed: ${dispatchTestResult.error || "Unknown error"}`}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Native Gmail SMTP Settings (Local / Non-Blocked Environments) */}
+        <div className="p-5 rounded bg-bg-card border border-border-subtle space-y-4">
+          <div className="flex items-center justify-between border-b border-border-subtle pb-3">
+            <div className="flex items-center gap-2">
+              <Mail size={16} className="text-text-muted" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                Native Gmail SMTP Service (Fallback / Local Dev)
+              </h3>
+            </div>
+            <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${
+              config?.smtp?.is_configured ? "bg-bg-elevated text-text-primary" : "bg-bg-elevated text-text-muted"
+            }`}>
+              {config?.smtp?.is_configured ? "GMAIL SMTP CONFIGURED" : "NOT CONFIGURED"}
             </span>
           </div>
 
@@ -231,9 +387,6 @@ export default function SettingsPage() {
                 placeholder="yourmail@gmail.com"
                 className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
               />
-              <span className="text-[10px] text-text-muted mt-1 block">
-                Primary Gmail or Google Workspace address.
-              </span>
             </div>
 
             <div>
@@ -244,12 +397,9 @@ export default function SettingsPage() {
                 type="password"
                 value={smtpPassword}
                 onChange={(e) => setSmtpPassword(e.target.value)}
-                placeholder="16-character app password (e.g. abcd efgh ijkl mnop)"
+                placeholder="16-character app password"
                 className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
               />
-              <span className="text-[10px] text-text-muted mt-1 block">
-                Generated from Google Account &rarr; Security &rarr; 2-Step Verification &rarr; App Passwords.
-              </span>
             </div>
 
             <div>
@@ -282,41 +432,6 @@ export default function SettingsPage() {
                 />
               </div>
             </div>
-          </div>
-
-          {/* Test SMTP Connection Action & Status */}
-          <div className="pt-2 border-t border-border-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleTestSmtp}
-                disabled={testingSmtp}
-                className="px-3.5 py-1.5 rounded text-xs font-semibold bg-bg-elevated border border-border-subtle hover:border-accent-neon text-text-primary flex items-center gap-2 disabled:opacity-50 transition-colors"
-              >
-                <ShieldCheck size={14} className={testingSmtp ? "animate-spin text-accent-neon" : "text-accent-neon"} />
-                <span>{testingSmtp ? "Testing STARTTLS Handshake..." : "Test Gmail SMTP Connection"}</span>
-              </button>
-
-              {smtpTestResult && (
-                <span className={`text-xs font-mono px-2.5 py-1 rounded border ${
-                  smtpTestResult.success
-                    ? "bg-accent-neon/15 text-accent-neon border-accent-neon/30"
-                    : "bg-red-500/15 text-red-400 border-red-500/30"
-                }`}>
-                  {smtpTestResult.success ? smtpTestResult.message : smtpTestResult.error}
-                </span>
-              )}
-            </div>
-
-            <a
-              href="https://myaccount.google.com/apppasswords"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[11px] text-accent-orange hover:underline flex items-center gap-1 font-mono"
-            >
-              <span>How to generate a Google App Password</span>
-              <ExternalLink size={11} />
-            </a>
           </div>
         </div>
 

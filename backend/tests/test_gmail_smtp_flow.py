@@ -41,7 +41,8 @@ async def run_all_tests():
     print("\n[TEST 1] Native Gmail SMTP Engine & STARTTLS Handshake...")
     with patch("smtplib.SMTP") as mock_smtp_cls:
         mock_server = MagicMock()
-        mock_smtp_cls.return_value.__enter__.return_value = mock_server
+        mock_smtp_cls.return_value = mock_server
+        mock_server.__enter__.return_value = mock_server
 
         # Test connection check with credentials
         test_svc = GmailSMTPService()

@@ -18,6 +18,8 @@ class UpdateSettingsRequest(BaseModel):
     groq_model: Optional[str] = None
     gemini_api_key: Optional[str] = None
     gemini_model: Optional[str] = None
+    resend_api_key: Optional[str] = None
+    resend_from_email: Optional[str] = None
     smtp_host: Optional[str] = None
     smtp_port: Optional[int] = None
     smtp_email: Optional[str] = None
@@ -37,6 +39,7 @@ async def get_settings():
         "app_name": settings.APP_NAME,
         "app_env": settings.APP_ENV,
         "database_url": "Async SQLite / Supabase PostgreSQL Compatible",
+        "active_email_provider": email_service.active_provider,
         "groq": {
             "is_configured": bool(settings.GROQ_API_KEY),
             "masked_key": mask_key(settings.GROQ_API_KEY),
@@ -48,14 +51,21 @@ async def get_settings():
             "masked_key": mask_key(settings.GEMINI_API_KEY),
             "model": settings.GEMINI_MODEL
         },
+        "resend": {
+            "is_configured": email_service.is_resend_configured,
+            "masked_key": mask_key(settings.RESEND_API_KEY),
+            "from_email": settings.RESEND_FROM_EMAIL or "MEETME Platform <onboarding@resend.dev>",
+            "port": 443,
+            "protocol": "HTTPS REST API (Render Free Tier Compatible)"
+        },
         "smtp": {
-            "is_configured": email_service.is_configured,
+            "is_configured": email_service.is_smtp_configured,
             "host": settings.SMTP_HOST,
             "port": settings.SMTP_PORT,
             "email": settings.SMTP_EMAIL or "",
             "masked_password": mask_key(settings.SMTP_PASSWORD),
             "from_name": settings.SMTP_FROM_NAME,
-            "provider": "Gmail SMTP"
+            "provider": "Gmail SMTP (STARTTLS / SSL)"
         },
         "default_workspace_id": settings.DEFAULT_WORKSPACE_ID
     }
@@ -78,6 +88,15 @@ async def update_settings(payload: UpdateSettingsRequest):
         from backend.app.services.gemini_service import gemini_service
         gemini_service.model = payload.gemini_model
 
+    if payload.resend_api_key is not None:
+        settings.RESEND_API_KEY = payload.resend_api_key
+        email_service.resend_api_key = payload.resend_api_key
+        os.environ["RESEND_API_KEY"] = payload.resend_api_key
+    if payload.resend_from_email is not None:
+        settings.RESEND_FROM_EMAIL = payload.resend_from_email
+        email_service.resend_from_email = payload.resend_from_email
+        os.environ["RESEND_FROM_EMAIL"] = payload.resend_from_email
+
     if payload.smtp_host is not None:
         settings.SMTP_HOST = payload.smtp_host
         email_service.host = payload.smtp_host
@@ -99,19 +118,71 @@ async def update_settings(payload: UpdateSettingsRequest):
     return {"status": "SUCCESS", "message": "Settings updated successfully."}
 
 @router.post("/api/settings/test-smtp")
-async def test_smtp_connection():
+@router.post("/api/settings/test-email")
+async def test_email_connection():
     """
-    Validates Gmail SMTP authentication via STARTTLS on port 587 in a non-blocking thread.
+    Validates active email transport (Resend HTTPS API over port 443 or Gmail SMTP).
     """
     import asyncio
     try:
-        result = await asyncio.wait_for(asyncio.to_thread(email_service.test_connection), timeout=8.0)
+        result = await asyncio.wait_for(asyncio.to_thread(email_service.test_connection), timeout=10.0)
         return result
     except asyncio.TimeoutError:
         return {
             "success": False,
-            "error": "SMTP connection timed out (8s limit). Hosting network may filter outbound SMTP port 587."
+            "error": "Email connection test timed out (10s limit). If using Gmail SMTP on Render Free Tier, outbound ports 25/465/587 are blocked. Use Resend HTTPS API instead."
         }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Email connection test failed: {str(e)}"
+        }
+
+class TestDispatchRequest(BaseModel):
+    to_email: str = "25ug1byai034@bmsit.in"
+    recipient_name: Optional[str] = "Rehan"
+
+@router.post("/api/settings/test-dispatch")
+async def test_email_dispatch(payload: TestDispatchRequest):
+    """
+    Sends an actual test email to verify live delivery via Resend or Gmail SMTP.
+    """
+    subject = "MEETME Platform - Email Delivery Verification"
+    html_content = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0D0D0D; color: #E5E5E5; border: 1px solid #262626; border-radius: 8px; overflow: hidden;">
+        <div style="background: #141414; padding: 20px 24px; border-bottom: 1px solid #262626; display: flex; align-items: center; justify-content: space-between;">
+            <div style="font-size: 16px; font-weight: 700; color: #FFFFFF; letter-spacing: 0.5px;">MEETME <span style="color: #FF7900;">PLATFORM</span></div>
+            <div style="font-size: 10px; font-family: monospace; background: rgba(182, 255, 0, 0.15); color: #B6FF00; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(182, 255, 0, 0.3);">DELIVERY TEST</div>
+        </div>
+        <div style="padding: 24px;">
+            <h2 style="font-size: 18px; color: #FFFFFF; margin-top: 0; margin-bottom: 12px;">Email Integration Verified</h2>
+            <p style="font-size: 14px; line-height: 1.6; color: #A3A3A3; margin-bottom: 20px;">
+                Hello <strong>{payload.recipient_name or payload.to_email}</strong>,<br><br>
+                This confirms that your MEETME email delivery engine is successfully configured and communicating over standard HTTPS Port 443 via Resend.
+            </p>
+            <div style="background: #1A1A1A; border: 1px solid #2A2A2A; border-radius: 6px; padding: 16px; margin-bottom: 20px; font-family: monospace; font-size: 12px;">
+                <div style="color: #737373; margin-bottom: 6px;">INTEGRATION DETAILS</div>
+                <div style="color: #E5E5E5;">Provider: <span style="color: #B6FF00;">{email_service.active_provider}</span></div>
+                <div style="color: #E5E5E5;">Recipient: <span style="color: #FFFFFF;">{payload.to_email}</span></div>
+                <div style="color: #E5E5E5;">Render Compatible: <span style="color: #B6FF00;">YES (Port 443 HTTPS)</span></div>
+            </div>
+            <p style="font-size: 12px; color: #737373; margin: 0;">
+                All approved action items and reminder schedules will now be dispatched to this inbox reliably.
+            </p>
+        </div>
+    </div>
+    """
+    text_content = f"Hello {payload.recipient_name or payload.to_email},\n\nThis confirms your MEETME email delivery engine is working ({email_service.active_provider})."
+    
+    res = await email_service.send_email(
+        to=payload.to_email,
+        subject=subject,
+        html=html_content,
+        text=text_content,
+        recipient_name=payload.recipient_name,
+        email_type="TEST_DISPATCH"
+    )
+    return res
 
 @router.post("/api/demo/seed")
 async def seed_demo(

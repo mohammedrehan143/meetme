@@ -178,7 +178,16 @@ export const api = {
     });
   },
   async testSmtp(): Promise<any> {
-    return fetchJson(`${API_BASE}/settings/test-smtp`, { method: "POST" });
+    return fetchJson(`${API_BASE}/settings/test-email`, { method: "POST" });
+  },
+  async testEmailConnection(): Promise<any> {
+    return fetchJson(`${API_BASE}/settings/test-email`, { method: "POST" });
+  },
+  async testEmailDispatch(toEmail: string, recipientName?: string): Promise<any> {
+    return fetchJson(`${API_BASE}/settings/test-dispatch`, {
+      method: "POST",
+      body: JSON.stringify({ to_email: toEmail, recipient_name: recipientName })
+    });
   },
   async seedDemo(force: boolean = false): Promise<any> {
     return fetchJson(`${API_BASE}/demo/seed?force=${force}`, { method: "POST" });
