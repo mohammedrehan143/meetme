@@ -8,6 +8,10 @@ export default function SettingsPage() {
   const [config, setConfig] = useState<any | null>(null);
   const [groqKey, setGroqKey] = useState("");
   const [groqModel, setGroqModel] = useState("llama-3.3-70b-versatile");
+
+  // Gemini State
+  const [geminiKey, setGeminiKey] = useState("");
+  const [geminiModel, setGeminiModel] = useState("gemini-1.5-pro");
   
   // Gmail SMTP State
   const [smtpEmail, setSmtpEmail] = useState("");
@@ -31,6 +35,7 @@ export default function SettingsPage() {
       const data = await api.getSettings();
       setConfig(data);
       if (data?.groq?.model) setGroqModel(data.groq.model);
+      if (data?.gemini?.model) setGeminiModel(data.gemini.model);
       if (data?.smtp?.email) setSmtpEmail(data.smtp.email);
       if (data?.smtp?.host) setSmtpHost(data.smtp.host);
       if (data?.smtp?.port) setSmtpPort(data.smtp.port);
@@ -48,6 +53,8 @@ export default function SettingsPage() {
       await api.updateSettings({
         groq_api_key: groqKey.trim() || undefined,
         groq_model: groqModel,
+        gemini_api_key: geminiKey.trim() || undefined,
+        gemini_model: geminiModel,
         smtp_email: smtpEmail.trim() || undefined,
         smtp_password: smtpPassword.trim() || undefined,
         smtp_host: smtpHost.trim() || undefined,
@@ -56,6 +63,7 @@ export default function SettingsPage() {
       });
       setMessage("Configuration updated successfully.");
       setGroqKey("");
+      setGeminiKey("");
       setSmtpPassword("");
       await loadSettings();
     } catch (err: any) {
@@ -184,6 +192,54 @@ export default function SettingsPage() {
               <span className="text-[10px] text-text-muted mt-1 block">
                 Whisper model: {config?.groq?.whisper_model || "whisper-large-v3"}
               </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Google Gemini AI Engine Settings */}
+        <div className="p-5 rounded bg-bg-card border border-border-subtle space-y-4">
+          <div className="flex items-center justify-between border-b border-border-subtle pb-3">
+            <div className="flex items-center gap-2">
+              <Cpu size={16} className="text-accent-neon" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
+                Google Gemini Engine (Deep Reasoning &amp; Long-Context Synthesis)
+              </h3>
+            </div>
+            <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${
+              config?.gemini?.is_configured ? "bg-accent-neon/20 text-accent-neon" : "bg-bg-elevated text-text-muted"
+            }`}>
+              {config?.gemini?.is_configured ? "GEMINI ACTIVE" : "STANDBY / OPTIONAL"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="text-text-secondary block mb-1">
+                Gemini API Key {config?.gemini?.is_configured && `(Current: ${config.gemini.masked_key})`}
+              </label>
+              <input
+                type="password"
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+              />
+              <span className="text-[10px] text-text-muted mt-1 block">
+                Powers deep implicit task extraction, 2M context window analysis, and multi-speaker disambiguation.
+              </span>
+            </div>
+
+            <div>
+              <label className="text-text-secondary block mb-1">Gemini Model</label>
+              <select
+                value={geminiModel}
+                onChange={(e) => setGeminiModel(e.target.value)}
+                className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+              >
+                <option value="gemini-1.5-pro">gemini-1.5-pro (Recommended for Complex Analysis)</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash (High Speed &amp; Low Latency)</option>
+                <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (Experimental)</option>
+              </select>
             </div>
           </div>
         </div>

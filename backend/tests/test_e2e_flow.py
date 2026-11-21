@@ -1,7 +1,11 @@
 import asyncio
 import sys
+import os
 import logging
 from datetime import datetime, timedelta
+
+# Ensure repo root is in python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.app.core.database import init_db, AsyncSessionLocal
 from backend.app.demo.seed_data import seed_demo_workspace, SAMPLE_TRANSCRIPT

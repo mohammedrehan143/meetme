@@ -40,6 +40,16 @@ class TranscriptionAgent:
             response_format={"type": "json_object"}
         )
 
+        if result.get("fallback"):
+            from backend.app.services.gemini_service import gemini_service
+            if gemini_service.is_configured:
+                g_res = await gemini_service.chat_completion(
+                    messages=messages,
+                    response_format={"type": "json_object"}
+                )
+                if not g_res.get("fallback"):
+                    result = g_res
+
         if not result.get("fallback"):
             try:
                 parsed = json.loads(result["content"])

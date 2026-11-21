@@ -16,6 +16,8 @@ router = APIRouter(tags=["settings"])
 class UpdateSettingsRequest(BaseModel):
     groq_api_key: Optional[str] = None
     groq_model: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    gemini_model: Optional[str] = None
     smtp_host: Optional[str] = None
     smtp_port: Optional[int] = None
     smtp_email: Optional[str] = None
@@ -41,6 +43,11 @@ async def get_settings():
             "model": settings.GROQ_MODEL,
             "whisper_model": settings.GROQ_WHISPER_MODEL
         },
+        "gemini": {
+            "is_configured": bool(settings.GEMINI_API_KEY),
+            "masked_key": mask_key(settings.GEMINI_API_KEY),
+            "model": settings.GEMINI_MODEL
+        },
         "smtp": {
             "is_configured": email_service.is_configured,
             "host": settings.SMTP_HOST,
@@ -60,6 +67,16 @@ async def update_settings(payload: UpdateSettingsRequest):
         os.environ["GROQ_API_KEY"] = payload.groq_api_key
     if payload.groq_model is not None:
         settings.GROQ_MODEL = payload.groq_model
+
+    if payload.gemini_api_key is not None:
+        settings.GEMINI_API_KEY = payload.gemini_api_key
+        os.environ["GEMINI_API_KEY"] = payload.gemini_api_key
+        from backend.app.services.gemini_service import gemini_service
+        gemini_service.api_key = payload.gemini_api_key
+    if payload.gemini_model is not None:
+        settings.GEMINI_MODEL = payload.gemini_model
+        from backend.app.services.gemini_service import gemini_service
+        gemini_service.model = payload.gemini_model
 
     if payload.smtp_host is not None:
         settings.SMTP_HOST = payload.smtp_host

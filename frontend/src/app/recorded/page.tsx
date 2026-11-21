@@ -2,12 +2,21 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, FileAudio, FileText, CheckCircle2, AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
+import { Upload, FileAudio, FileText, CheckCircle2, AlertTriangle, ArrowRight, Loader2, Sparkles, Clipboard } from "lucide-react";
 import { api } from "@/lib/api";
+
+const SAMPLE_TRANSCRIPT = `[00:00:15] Sarah Chen: Let's do a fast sync on the release deliverables.
+[00:00:40] Rahul Sharma: I will complete the frontend responsive layout and cross-browser audio capture tests by November 27.
+[00:01:10] Elena Rostova: I will finalize the backend FastAPI orchestration pipeline and Gmail SMTP reminder worker by November 26.
+[00:01:45] Marcus Vance: I will develop the end-to-end integration test suite and WebSocket stress tests by November 28.
+[00:02:15] Sarah Chen: Perfect. I will assemble the executive demo walkthrough and documentation by November 29.
+[00:02:40] Sarah Chen: Also, we need someone to audit workspace security and API rate limit safeguards before release.`;
 
 export default function RecordedMeetingPage() {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"upload" | "paste">("upload");
   const [file, setFile] = useState<File | null>(null);
+  const [pastedText, setPastedText] = useState("");
   const [title, setTitle] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -62,21 +71,43 @@ export default function RecordedMeetingPage() {
     }
   };
 
+  const handleLoadSample = () => {
+    setPastedText(SAMPLE_TRANSCRIPT);
+    if (!title) {
+      setTitle("Sprint Architecture & Execution Sync");
+    }
+  };
+
   const handleProcess = async () => {
-    if (!file) return;
+    let fileToUpload: File | null = file;
+
+    if (activeTab === "paste") {
+      if (!pastedText.trim()) {
+        setError("Please enter or paste meeting transcript text.");
+        return;
+      }
+      const meetingName = title.trim() || "Meeting Transcript";
+      const blob = new Blob([pastedText], { type: "text/plain" });
+      fileToUpload = new File([blob], `${meetingName.replace(/\s+/g, "_")}.txt`, { type: "text/plain" });
+    } else {
+      if (!fileToUpload) {
+        setError("Please select an audio or transcript file to upload.");
+        return;
+      }
+    }
 
     setIsUploading(true);
     setError(null);
     setUploadProgress(20);
-    setProcessingStatus("Uploading file to MEETME server...");
+    setProcessingStatus("Submitting to MEETME Multi-Agent Orchestrator...");
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
-      formData.append("title", title || file.name);
+      formData.append("file", fileToUpload);
+      formData.append("title", title || fileToUpload.name.replace(/\.[^/.]+$/, ""));
 
       setUploadProgress(50);
-      setProcessingStatus("Groq Multi-Agent Orchestrator analyzing conversation...");
+      setProcessingStatus("Extracting tasks, mapping assignees & confidence scoring...");
 
       const res = await api.uploadMeeting(formData);
       setUploadProgress(100);
@@ -84,7 +115,7 @@ export default function RecordedMeetingPage() {
       setResult(res);
 
     } catch (err: any) {
-      setError(err.message || "Failed to process meeting file.");
+      setError(err.message || "Failed to process meeting.");
     } finally {
       setIsUploading(false);
     }
@@ -93,55 +124,108 @@ export default function RecordedMeetingPage() {
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="pb-3 border-b border-border-subtle">
-        <h1 className="text-xl font-bold text-text-primary">Ingest Recorded Meeting</h1>
+        <h1 className="text-xl font-bold text-text-primary">Ingest Recorded Meeting or Transcript</h1>
         <p className="text-xs text-text-secondary mt-1">
-          Upload audio recording or transcript file to trigger autonomous task extraction and approval generation.
+          Upload audio recording, drop a transcript file, or paste raw meeting notes to trigger autonomous task extraction.
         </p>
       </div>
 
       {!result ? (
         <div className="space-y-6">
-          {/* File Upload Drag & Drop Area */}
-          <div
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors cursor-pointer flex flex-col items-center justify-center space-y-3 ${
-              dragActive
-                ? "border-accent-orange bg-accent-orange/5"
-                : "border-border-subtle hover:border-border-strong bg-bg-card"
-            }`}
-            onClick={() => document.getElementById("file-upload-input")?.click()}
-          >
-            <input
-              id="file-upload-input"
-              type="file"
-              onChange={handleFileChange}
-              accept=".mp3,.wav,.m4a,.webm,.txt,.vtt,.srt,.json,.md"
-              className="hidden"
-            />
-
-            <div className="w-12 h-12 rounded-full bg-bg-elevated flex items-center justify-center text-accent-orange border border-border-subtle">
-              <Upload size={20} />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs font-semibold text-text-primary">
-                {file ? file.name : "Drag and drop meeting audio or transcript file"}
-              </p>
-              <p className="text-[11px] text-text-secondary">
-                Supported formats: MP3, WAV, M4A, WEBM, TXT, VTT, SRT (up to 100MB)
-              </p>
-            </div>
-
-            {file && (
-              <div className="flex items-center gap-2 text-xs font-mono text-accent-neon bg-accent-neon/10 px-3 py-1 rounded">
-                <CheckCircle2 size={13} />
-                <span>Selected: {(file.size / (1024 * 1024)).toFixed(2)} MB</span>
-              </div>
-            )}
+          {/* Tab Selector */}
+          <div className="flex border-b border-border-subtle gap-2">
+            <button
+              onClick={() => { setActiveTab("upload"); setError(null); }}
+              className={`pb-2.5 px-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+                activeTab === "upload"
+                  ? "border-accent-orange text-accent-orange"
+                  : "border-transparent text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              <FileAudio size={14} />
+              <span>Upload Audio or Document</span>
+            </button>
+            <button
+              onClick={() => { setActiveTab("paste"); setError(null); }}
+              className={`pb-2.5 px-3 text-xs font-semibold flex items-center gap-2 border-b-2 transition-colors ${
+                activeTab === "paste"
+                  ? "border-accent-orange text-accent-orange"
+                  : "border-transparent text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              <FileText size={14} />
+              <span>Paste Transcript / Notes</span>
+            </button>
           </div>
+
+          {activeTab === "upload" ? (
+            /* File Upload Drag & Drop Area */
+            <div
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors cursor-pointer flex flex-col items-center justify-center space-y-3 ${
+                dragActive
+                  ? "border-accent-orange bg-accent-orange/5"
+                  : "border-border-subtle hover:border-border-strong bg-bg-card"
+              }`}
+              onClick={() => document.getElementById("file-upload-input")?.click()}
+            >
+              <input
+                id="file-upload-input"
+                type="file"
+                onChange={handleFileChange}
+                accept=".mp3,.wav,.m4a,.webm,.txt,.vtt,.srt,.json,.md"
+                className="hidden"
+              />
+
+              <div className="w-12 h-12 rounded-full bg-bg-elevated flex items-center justify-center text-accent-orange border border-border-subtle">
+                <Upload size={20} />
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-text-primary">
+                  {file ? file.name : "Drag and drop meeting audio or transcript file"}
+                </p>
+                <p className="text-[11px] text-text-secondary">
+                  Supported formats: MP3, WAV, M4A, WEBM, TXT, VTT, SRT (up to 100MB)
+                </p>
+              </div>
+
+              {file && (
+                <div className="flex items-center gap-2 text-xs font-mono text-accent-neon bg-accent-neon/10 px-3 py-1 rounded">
+                  <CheckCircle2 size={13} />
+                  <span>Selected: {(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Paste Transcript Text Area */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-text-primary">
+                  Meeting Dialogue / Notes
+                </label>
+                <button
+                  type="button"
+                  onClick={handleLoadSample}
+                  className="text-[11px] font-mono text-accent-orange hover:underline flex items-center gap-1"
+                >
+                  <Sparkles size={11} />
+                  <span>Load Sample Transcript</span>
+                </button>
+              </div>
+
+              <textarea
+                rows={10}
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder="Paste your meeting transcript or notes here...&#10;&#10;e.g.&#10;Sarah: Let's do a fast sync. Rahul, where are we on frontend?&#10;Rahul: I will complete the frontend responsive layout by November 27.&#10;Elena: I will implement the FastAPI backend and reminder worker by November 26."
+                className="w-full bg-bg-elevated border border-border-subtle rounded p-3 text-xs text-text-primary font-mono focus:outline-none focus:border-accent-orange leading-relaxed"
+              />
+            </div>
+          )}
 
           {/* Meeting Title Input */}
           <div className="p-4 rounded bg-bg-card border border-border-subtle space-y-2">
@@ -188,7 +272,7 @@ export default function RecordedMeetingPage() {
             </button>
             <button
               onClick={handleProcess}
-              disabled={!file || isUploading}
+              disabled={(activeTab === "upload" && !file) || (activeTab === "paste" && !pastedText.trim()) || isUploading}
               className="px-5 py-2 rounded text-xs font-semibold bg-accent-orange text-black hover:bg-accent-orange-hover disabled:opacity-50 flex items-center gap-2"
             >
               {isUploading ? (
@@ -198,7 +282,7 @@ export default function RecordedMeetingPage() {
                 </>
               ) : (
                 <>
-                  <span>Extract Tasks & Generate Approvals</span>
+                  <span>Extract Tasks &amp; Generate Approvals</span>
                   <ArrowRight size={13} />
                 </>
               )}
@@ -211,7 +295,7 @@ export default function RecordedMeetingPage() {
           <div className="flex items-center gap-2 text-accent-neon">
             <CheckCircle2 size={20} />
             <h2 className="text-sm font-bold uppercase tracking-wider">
-              Meeting Ingested & Analyzed Successfully
+              Meeting Ingested &amp; Analyzed Successfully
             </h2>
           </div>
 
@@ -231,16 +315,16 @@ export default function RecordedMeetingPage() {
           </div>
 
           <p className="text-xs text-text-secondary leading-relaxed">
-            All extracted action items have been mapped to workspace members and sent to the Approval Center. 
+            All extracted action items have been mapped to workspace members and staged in the Approval Center. 
             Execution and email dispatch will occur upon your human review and approval.
           </p>
 
           <div className="flex justify-end gap-3 pt-3 border-t border-border-subtle">
             <button
-              onClick={() => setResult(null)}
+              onClick={() => { setResult(null); setFile(null); setPastedText(""); setTitle(""); }}
               className="px-3 py-1.5 rounded text-xs font-medium bg-bg-elevated border border-border-subtle text-text-secondary hover:text-text-primary"
             >
-              Upload Another
+              Ingest Another
             </button>
             <button
               onClick={() => router.push(`/meetings/${result.meeting_id}`)}

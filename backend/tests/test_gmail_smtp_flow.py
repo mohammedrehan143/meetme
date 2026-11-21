@@ -1,8 +1,14 @@
 import asyncio
 import os
+import sys
+import uuid
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
+
+# Ensure repo root is in python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 from sqlalchemy import select
 
 from backend.app.core.database import init_db, AsyncSessionLocal
@@ -70,9 +76,13 @@ async def run_all_tests():
     # TEST 2: Task Approval & Task Assignment Email Dispatch
     # --------------------------------------------------------------------------
     print("\n[TEST 2] Task Approval Dispatches Assignment Email...")
+    t2_uuid = uuid.uuid4().hex[:8]
+    test_task_id = f"task-approval-{t2_uuid}"
+    test_approval_id = f"appr-{t2_uuid}"
+
     async with AsyncSessionLocal() as db:
         task = Task(
-            id="task-approval-test-1",
+            id=test_task_id,
             workspace_id=ws_id,
             title="Implement OAuth authentication flow",
             description="Set up Google OAuth and session management",
@@ -85,7 +95,7 @@ async def run_all_tests():
         )
         db.add(task)
         approval = Approval(
-            id="appr-test-1",
+            id=test_approval_id,
             workspace_id=ws_id,
             task_id=task.id,
             status="PENDING",
@@ -215,7 +225,7 @@ async def run_all_tests():
     # --------------------------------------------------------------------------
     print("\n[TEST 4] Multi-tier Automated Reminder Scheduling...")
     async with AsyncSessionLocal() as db:
-        rem_stmt = select(Reminder).where(Reminder.task_id == "task-approval-test-1")
+        rem_stmt = select(Reminder).where(Reminder.task_id == test_task_id)
         rems = (await db.execute(rem_stmt)).scalars().all()
         types = [r.reminder_type for r in rems]
         assert "PRE_DEADLINE" in types, "PRE_DEADLINE reminder missing"
@@ -227,10 +237,14 @@ async def run_all_tests():
     # TEST 5: Recovery After Simulated Backend Restarts
     # --------------------------------------------------------------------------
     print("\n[TEST 5] Reminder Worker Recovery Across Backend Restarts...")
+    t5_uuid = uuid.uuid4().hex[:8]
+    reboot_task_id = f"task-reboot-{t5_uuid}"
+    reboot_rem_id = f"rem-reboot-{t5_uuid}"
+
     async with AsyncSessionLocal() as db:
         # Insert a pending reminder simulating a shutdown while it was queued
         reboot_task = Task(
-            id="task-reboot-test-1",
+            id=reboot_task_id,
             workspace_id=ws_id,
             title="Database recovery verification task",
             assignee_name="Marcus Vance",
@@ -240,7 +254,7 @@ async def run_all_tests():
         )
         db.add(reboot_task)
         reboot_rem = Reminder(
-            id="rem-reboot-001",
+            id=reboot_rem_id,
             workspace_id=ws_id,
             task_id=reboot_task.id,
             task_ids=[reboot_task.id],
@@ -258,7 +272,7 @@ async def run_all_tests():
     await new_worker.process_pending_reminders()
 
     async with AsyncSessionLocal() as db:
-        res = await db.execute(select(Reminder).where(Reminder.id == "rem-reboot-001"))
+        res = await db.execute(select(Reminder).where(Reminder.id == reboot_rem_id))
         reboot_check = res.scalar_one_or_none()
         assert reboot_check is not None
         assert reboot_check.status == "SENT", f"Expected SENT after recovery, got {reboot_check.status}"
@@ -268,9 +282,12 @@ async def run_all_tests():
     # TEST 6: Complete Task Cancels Future Reminders
     # --------------------------------------------------------------------------
     print("\n[TEST 6] Completing a Task Immediately Cancels Future Reminders...")
+    t6_uuid = uuid.uuid4().hex[:8]
+    cancel_task_id = f"task-cancel-{t6_uuid}"
+
     async with AsyncSessionLocal() as db:
         cancel_task = Task(
-            id="task-cancel-test-1",
+            id=cancel_task_id,
             workspace_id=ws_id,
             title="Task to be completed early",
             assignee_name="Elena Rostova",
@@ -306,9 +323,12 @@ async def run_all_tests():
     # TEST 7: Changing a Deadline Recalculates Reminder Schedules
     # --------------------------------------------------------------------------
     print("\n[TEST 7] Changing Task Deadline Recalculates Reminder Schedules...")
+    t7_uuid = uuid.uuid4().hex[:8]
+    recalc_task_id = f"task-recalc-{t7_uuid}"
+
     async with AsyncSessionLocal() as db:
         recalc_task = Task(
-            id="task-recalc-test-1",
+            id=recalc_task_id,
             workspace_id=ws_id,
             title="Task with shifting deadline",
             assignee_name="Rahul Sharma",
@@ -353,9 +373,13 @@ async def run_all_tests():
     # TEST 8: SMTP Failure Handling & Exponential Backoff
     # --------------------------------------------------------------------------
     print("\n[TEST 8] SMTP Failure & Exponential Backoff Retries...")
+    t8_uuid = uuid.uuid4().hex[:8]
+    fail_task_id = f"task-fail-{t8_uuid}"
+    fail_rem_id = f"rem-fail-{t8_uuid}"
+
     async with AsyncSessionLocal() as db:
         fail_task = Task(
-            id="task-fail-test-1",
+            id=fail_task_id,
             workspace_id=ws_id,
             title="Task testing SMTP retry logic",
             assignee_name="Arjun Patel",
@@ -365,7 +389,7 @@ async def run_all_tests():
         )
         db.add(fail_task)
         fail_rem = Reminder(
-            id="rem-fail-test-1",
+            id=fail_rem_id,
             workspace_id=ws_id,
             task_id=fail_task.id,
             task_ids=[fail_task.id],
@@ -384,7 +408,7 @@ async def run_all_tests():
         await reminder_worker.process_pending_reminders()
 
     async with AsyncSessionLocal() as db:
-        res = await db.execute(select(Reminder).where(Reminder.id == "rem-fail-test-1"))
+        res = await db.execute(select(Reminder).where(Reminder.id == fail_rem_id))
         r = res.scalar_one()
         assert r.retry_count == 1, f"Expected retry_count=1, got {r.retry_count}"
         assert r.status == "PENDING", f"Expected still PENDING for retry, got {r.status}"
