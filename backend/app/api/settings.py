@@ -117,6 +117,52 @@ async def seed_demo(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to seed demo workspace: {str(e)}")
 
+@router.post("/api/demo/wipe")
+@router.get("/api/demo/wipe")
+async def wipe_demo(db: AsyncSession = Depends(get_db)):
+    """
+    Cleans demo meetings, tasks, and fake demo team members from the database.
+    """
+    try:
+        from backend.app.models.schema import (
+            User, Workspace, WorkspaceMember, Meeting, MeetingTranscript,
+            Speaker, Task, TaskDependency, Approval, EmailLog, Reminder,
+            AutomationLog, AgentRun, Notification
+        )
+        from sqlalchemy import delete
+
+        demo_meeting_ids = ["mtg-demo-001"]
+        m_stmt = select(Meeting.id).where(Meeting.id.in_(demo_meeting_ids) | Meeting.title.ilike("%demo%") | Meeting.title.ilike("%Sprint Execution%"))
+        found_m_ids = (await db.execute(m_stmt)).scalars().all()
+        all_target_meeting_ids = list(set(demo_meeting_ids + list(found_m_ids)))
+
+        if all_target_meeting_ids:
+            t_stmt = select(Task.id).where(Task.meeting_id.in_(all_target_meeting_ids))
+            t_ids = (await db.execute(t_stmt)).scalars().all()
+
+            if t_ids:
+                await db.execute(delete(Reminder).where(Reminder.task_id.in_(t_ids)))
+                await db.execute(delete(Approval).where(Approval.task_id.in_(t_ids)))
+                await db.execute(delete(TaskDependency).where(TaskDependency.task_id.in_(t_ids)))
+                await db.execute(delete(Task).where(Task.id.in_(t_ids)))
+
+            await db.execute(delete(MeetingTranscript).where(MeetingTranscript.meeting_id.in_(all_target_meeting_ids)))
+            await db.execute(delete(Speaker).where(Speaker.meeting_id.in_(all_target_meeting_ids)))
+            await db.execute(delete(AgentRun).where(AgentRun.meeting_id.in_(all_target_meeting_ids)))
+            await db.execute(delete(Meeting).where(Meeting.id.in_(all_target_meeting_ids)))
+
+        demo_emails = [
+            "sarah.chen@meetme.work", "rahul.sharma@meetme.work",
+            "elena.rostova@meetme.work", "marcus.vance@meetme.work"
+        ]
+        await db.execute(delete(WorkspaceMember).where(WorkspaceMember.email.in_(demo_emails)))
+        await db.execute(delete(User).where(User.email.in_(demo_emails)))
+        await db.commit()
+
+        return {"status": "SUCCESS", "message": "Demo data wiped cleanly from database."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to wipe demo data: {str(e)}")
+
 @router.get("/api/notifications")
 async def list_notifications(
     workspace_id: Optional[str] = None,

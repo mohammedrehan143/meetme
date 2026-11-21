@@ -152,6 +152,35 @@ async def create_meeting(
     await db.refresh(meeting)
     return {"id": meeting.id, "title": meeting.title, "status": meeting.status}
 
+@router.delete("/{meeting_id}")
+async def delete_meeting(
+    meeting_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Meeting).where(Meeting.id == meeting_id)
+    meeting = (await db.execute(stmt)).scalar_one_or_none()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    from backend.app.models.schema import MeetingTranscript, Speaker, Task, Approval, Reminder, TaskDependency, AgentRun
+    from sqlalchemy import delete
+
+    t_stmt = select(Task.id).where(Task.meeting_id == meeting_id)
+    t_ids = (await db.execute(t_stmt)).scalars().all()
+    if t_ids:
+        await db.execute(delete(Reminder).where(Reminder.task_id.in_(t_ids)))
+        await db.execute(delete(Approval).where(Approval.task_id.in_(t_ids)))
+        await db.execute(delete(TaskDependency).where(TaskDependency.task_id.in_(t_ids)))
+        await db.execute(delete(Task).where(Task.id.in_(t_ids)))
+
+    await db.execute(delete(MeetingTranscript).where(MeetingTranscript.meeting_id == meeting_id))
+    await db.execute(delete(Speaker).where(Speaker.meeting_id == meeting_id))
+    await db.execute(delete(AgentRun).where(AgentRun.meeting_id == meeting_id))
+    await db.execute(delete(Meeting).where(Meeting.id == meeting_id))
+    await db.commit()
+
+    return {"status": "SUCCESS", "deleted_meeting_id": meeting_id}
+
 @router.post("/upload")
 async def upload_meeting_file(
     file: UploadFile = File(...),

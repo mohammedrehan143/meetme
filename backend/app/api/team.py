@@ -119,3 +119,19 @@ async def update_member(
     await db.commit()
     await db.refresh(member)
     return {"id": member.id, "full_name": member.full_name, "email": member.email, "title": member.title}
+
+@router.delete("/{member_id}")
+async def delete_member(
+    member_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(WorkspaceMember).where(WorkspaceMember.id == member_id)
+    res = await db.execute(stmt)
+    member = res.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    from sqlalchemy import delete
+    await db.execute(delete(WorkspaceMember).where(WorkspaceMember.id == member_id))
+    await db.commit()
+    return {"status": "SUCCESS", "deleted_member_id": member_id}
