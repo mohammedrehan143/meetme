@@ -100,6 +100,12 @@ export const api = {
       body: JSON.stringify({ custom_payload: customPayload, approval_notes: notes })
     });
   },
+  async dispatchApprovalEmail(id: string, toEmail: string, recipientName?: string): Promise<any> {
+    return fetchJson(`${API_BASE}/approvals/${id}/dispatch-email`, {
+      method: "POST",
+      body: JSON.stringify({ to_email: toEmail, recipient_name: recipientName })
+    });
+  },
   async batchApprove(ids: string[]): Promise<any> {
     return fetchJson(`${API_BASE}/approvals/batch-approve`, {
       method: "POST",

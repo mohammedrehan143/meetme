@@ -28,6 +28,11 @@ class RejectRequest(BaseModel):
     reason: Optional[str] = None
     user_id: Optional[str] = None
 
+class DispatchEmailRequest(BaseModel):
+    to_email: str
+    recipient_name: Optional[str] = None
+    user_id: Optional[str] = None
+
 @router.get("")
 async def list_approvals(
     workspace_id: Optional[str] = None,
@@ -131,3 +136,41 @@ async def reject_approval(
 
     await db.commit()
     return {"status": "REJECTED", "approval_id": approval.id}
+
+@router.post("/{approval_id}/dispatch-email")
+async def dispatch_approval_email(
+    approval_id: str,
+    payload: DispatchEmailRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(Approval).where(Approval.id == approval_id)
+    res = await db.execute(stmt)
+    approval = res.scalar_one_or_none()
+    if not approval:
+        raise HTTPException(status_code=404, detail="Approval not found")
+
+    user_id = payload.user_id or settings.DEFAULT_USER_ID
+    clean_email = payload.to_email.strip()
+    if not clean_email or "@" not in clean_email:
+        raise HTTPException(status_code=400, detail="Invalid email address specified.")
+
+    base_payload = approval.approved_payload or approval.proposed_payload or {}
+    custom_payload = {
+        **base_payload,
+        "assignee_email": clean_email,
+    }
+    if payload.recipient_name:
+        custom_payload["assignee_name"] = payload.recipient_name
+
+    try:
+        result = await execution_agent.execute_approval(
+            db=db,
+            approval_id=approval_id,
+            user_id=user_id,
+            custom_payload=custom_payload,
+            approved_notes=f"Email dispatched to {clean_email}"
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error dispatching email for approval {approval_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

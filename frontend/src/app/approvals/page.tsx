@@ -14,7 +14,8 @@ import {
   RotateCw,
   Eye,
   Calendar,
-  UserCheck
+  UserCheck,
+  Send
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Approval } from "@/lib/types";
@@ -25,6 +26,9 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("PENDING");
   
+  // Destination emails keyed by approval ID
+  const [destinationEmails, setDestinationEmails] = useState<Record<string, string>>({});
+
   // Modal for Edit & Approve
   const [editingApproval, setEditingApproval] = useState<Approval | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -47,6 +51,14 @@ export default function ApprovalsPage() {
       const data = await api.getApprovals(statusFilter === "ALL" ? undefined : statusFilter);
       setApprovals(data);
       setSelectedIds([]);
+      // Prepopulate destination emails map
+      const initialMap: Record<string, string> = {};
+      data.forEach((app) => {
+        const p = app.proposed_payload || {};
+        const email = p.assignee_email || app.approved_recipient;
+        if (email) initialMap[app.id] = email;
+      });
+      setDestinationEmails((prev) => ({ ...initialMap, ...prev }));
     } catch (err) {
       console.error("Failed to load approvals:", err);
     } finally {
@@ -68,13 +80,62 @@ export default function ApprovalsPage() {
     );
   };
 
-  const handleApproveSingle = async (approvalId: string) => {
+  const handleApproveSingle = async (app: Approval) => {
+    const p = app.proposed_payload || {};
+    let targetEmail = (destinationEmails[app.id] || p.assignee_email || "").trim();
+
+    // If destination email is empty, prompt the user so it is NEVER silently skipped!
+    if (!targetEmail) {
+      const entered = window.prompt(
+        `Please specify the destination email address to receive this task assignment:\n"${p.title || 'Task'}"`,
+        "25ug1byai034@bmsit.in"
+      );
+      if (entered === null) {
+        // User cancelled, abort approval
+        return;
+      }
+      targetEmail = entered.trim();
+      if (targetEmail) {
+        setDestinationEmails((prev) => ({ ...prev, [app.id]: targetEmail }));
+      }
+    }
+
     setExecuting(true);
     try {
-      await api.approveAction(approvalId);
+      const customPayload = {
+        ...p,
+        assignee_email: targetEmail || undefined,
+      };
+      await api.approveAction(app.id, customPayload, "Approved with verified destination email");
       await loadApprovals();
     } catch (err: any) {
       alert(`Approval execution failed: ${err.message}`);
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const handleSendEmailNow = async (app: Approval) => {
+    const p = app.proposed_payload || {};
+    let targetEmail = (destinationEmails[app.id] || p.assignee_email || app.approved_recipient || "").trim();
+
+    if (!targetEmail) {
+      const entered = window.prompt(
+        `Enter destination email address to dispatch task assignment:\n"${p.title || 'Task'}"`,
+        "25ug1byai034@bmsit.in"
+      );
+      if (!entered || !entered.trim()) return;
+      targetEmail = entered.trim();
+      setDestinationEmails((prev) => ({ ...prev, [app.id]: targetEmail }));
+    }
+
+    setExecuting(true);
+    try {
+      await api.dispatchApprovalEmail(app.id, targetEmail, p.assignee_name);
+      alert(`Assignment email successfully dispatched to ${targetEmail} via Gmail SMTP!`);
+      await loadApprovals();
+    } catch (err: any) {
+      alert(`Email dispatch failed: ${err.message}`);
     } finally {
       setExecuting(false);
     }
@@ -111,7 +172,7 @@ export default function ApprovalsPage() {
     setEditingApproval(approval);
     setEditTitle(p.title || "");
     setEditAssigneeName(p.assignee_name || "");
-    setEditAssigneeEmail(p.assignee_email || "");
+    setEditAssigneeEmail(destinationEmails[approval.id] || p.assignee_email || approval.approved_recipient || "");
     setEditDeadline(p.deadline || "");
     setEditPriority(p.priority || "MEDIUM");
     setEditNotes("");
@@ -305,24 +366,10 @@ export default function ApprovalsPage() {
                       <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-text-secondary">
                         <div>
                           Assignee:{" "}
-                          <strong className={p.assignee_email ? "text-text-primary" : "text-yellow-400"}>
+                          <strong className="text-text-primary">
                             {p.assignee_name || "Unassigned"}
                           </strong>
                         </div>
-                        {p.assignee_email ? (
-                          <div>
-                            Destination Email: <strong className="text-accent-neon font-semibold">{p.assignee_email}</strong>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(app)}
-                            className="text-accent-orange hover:underline flex items-center gap-1 font-semibold"
-                          >
-                            <Mail size={11} />
-                            <span>+ Specify Recipient Email</span>
-                          </button>
-                        )}
                         <div>
                           Deadline: <strong className="text-accent-orange">{p.deadline || "TBD"}</strong>
                         </div>
@@ -332,6 +379,38 @@ export default function ApprovalsPage() {
                             {Math.round((p.confidence || 0.9) * 100)}%
                           </strong>
                         </div>
+                        {app.approved_recipient && (
+                          <div className="text-accent-neon flex items-center gap-1">
+                            <CheckCircle2 size={11} />
+                            <span>Sent to: {app.approved_recipient}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Destination Email Inline Row */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border-subtle/50 text-xs">
+                        <span className="text-text-muted font-mono flex items-center gap-1">
+                          <Mail size={12} className="text-accent-orange shrink-0" />
+                          <span className="font-semibold text-text-secondary">Destination Email:</span>
+                        </span>
+                        <input
+                          type="email"
+                          value={destinationEmails[app.id] ?? (p.assignee_email || app.approved_recipient || "")}
+                          onChange={(e) => setDestinationEmails({ ...destinationEmails, [app.id]: e.target.value })}
+                          placeholder="e.g. 25ug1byai034@bmsit.in"
+                          className="bg-bg-elevated border border-border-subtle focus:border-accent-orange rounded px-2.5 py-1 text-xs text-text-primary font-mono w-60 sm:w-80"
+                        />
+                        {app.status === "APPROVED" && (
+                          <button
+                            onClick={() => handleSendEmailNow(app)}
+                            disabled={executing}
+                            className="px-2.5 py-1 text-xs font-semibold bg-accent-orange/20 border border-accent-orange/40 text-accent-orange hover:bg-accent-orange hover:text-black rounded flex items-center gap-1 transition-colors"
+                            title="Dispatch assignment email via Gmail SMTP"
+                          >
+                            <Send size={11} />
+                            <span>{app.approved_recipient ? "Re-send Email" : "Send Email Now"}</span>
+                          </button>
+                        )}
                       </div>
 
                       {/* Evidence Quote */}
@@ -377,12 +456,12 @@ export default function ApprovalsPage() {
                         </button>
 
                         <button
-                          onClick={() => handleApproveSingle(app.id)}
+                          onClick={() => handleApproveSingle(app)}
                           disabled={executing}
                           className="px-3 py-1 text-xs font-semibold bg-accent-orange text-black hover:bg-accent-orange-hover rounded flex items-center gap-1 transition-colors disabled:opacity-50"
                         >
                           <Check size={12} />
-                          <span>Approve</span>
+                          <span>Approve &amp; Send</span>
                         </button>
                       </>
                     )}

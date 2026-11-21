@@ -32,9 +32,6 @@ class ExecutionAgent:
         if not approval:
             raise ValueError(f"Approval {approval_id} not found.")
 
-        if approval.status == "APPROVED":
-            return {"status": "ALREADY_APPROVED", "message": "This approval was already executed."}
-
         # 2. Fetch associated task
         task_stmt = select(Task).where(Task.id == approval.task_id)
         task_res = await db.execute(task_stmt)
@@ -44,21 +41,35 @@ class ExecutionAgent:
             raise ValueError(f"Task {approval.task_id} not found.")
 
         payload = custom_payload or approval.proposed_payload or {}
+        new_email = (payload.get("assignee_email") or "").strip() if payload else ""
+
+        # If already approved, allow redispatch if a destination email is provided or if email wasn't sent
+        if approval.status == "APPROVED":
+            if not new_email and not task.assignee_email:
+                return {
+                    "status": "ALREADY_APPROVED",
+                    "message": "This approval was already executed without a destination email. Please specify an email to dispatch."
+                }
+            elif not new_email and approval.approved_recipient:
+                return {
+                    "status": "ALREADY_APPROVED",
+                    "message": f"This approval was already executed and dispatched to {approval.approved_recipient}."
+                }
 
         # 3. Update task with approved/modified fields
-        if "title" in payload:
+        if "title" in payload and payload["title"]:
             task.title = payload["title"]
-        if "description" in payload:
+        if "description" in payload and payload["description"]:
             task.description = payload["description"]
-        if "assignee_name" in payload:
+        if "assignee_name" in payload and payload["assignee_name"]:
             task.assignee_name = payload["assignee_name"]
-        if "assignee_email" in payload:
-            task.assignee_email = payload["assignee_email"]
+        if new_email:
+            task.assignee_email = new_email
         if "assignee_id" in payload:
             task.assignee_id = payload["assignee_id"]
-        if "deadline" in payload:
+        if "deadline" in payload and payload["deadline"]:
             task.deadline = payload["deadline"]
-        if "priority" in payload:
+        if "priority" in payload and payload["priority"]:
             task.priority = payload["priority"]
 
         task.status = "APPROVED"
@@ -67,7 +78,8 @@ class ExecutionAgent:
         # 4. Update approval record
         approval.status = "APPROVED"
         approval.approved_payload = payload
-        approval.approved_recipient = task.assignee_email
+        if task.assignee_email:
+            approval.approved_recipient = task.assignee_email
         approval.approval_notes = approved_notes or "Approved by user"
         approval.approved_at = datetime.utcnow()
         if user_id:
@@ -78,23 +90,22 @@ class ExecutionAgent:
         email_id = None
         email_status = "SKIPPED"
         error_msg = None
-        idempotency_key = f"task_assignment_{task.id}_{approval.id}"
+        idempotency_key = f"task_assignment_{task.id}_{approval.id}_{task.assignee_email or 'none'}_{int(datetime.utcnow().timestamp())}"
 
         if task.assignee_email:
-            email_content = payload.get("email_content")
-            if not email_content:
-                email_content = email_agent.generate_task_assignment_email(
-                    task={
-                        "id": task.id,
-                        "title": task.title,
-                        "description": task.description,
-                        "assignee_name": task.assignee_name,
-                        "deadline": task.deadline,
-                        "priority": task.priority,
-                        "evidence_quote": task.evidence_quote,
-                    },
-                    meeting_title=payload.get("meeting_title", "MEETME Execution Sync")
-                )
+            # Generate fresh, high-precision assignment email template
+            email_content = email_agent.generate_task_assignment_email(
+                task={
+                    "id": task.id,
+                    "title": task.title,
+                    "description": task.description,
+                    "assignee_name": task.assignee_name or "Team Member",
+                    "deadline": task.deadline,
+                    "priority": task.priority,
+                    "evidence_quote": task.evidence_quote,
+                },
+                meeting_title=payload.get("meeting_title", "MEETME Execution Sync")
+            )
 
             # Send via Gmail SMTP service with idempotency key
             email_res = await email_service.send_email(
