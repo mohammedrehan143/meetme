@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,11 +23,14 @@ logger = logging.getLogger("meetme")
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Initializing MEETME backend engine...")
-    await init_db()
+    try:
+        await init_db()
 
-    # Seed demo workspace if not seeded
-    async with AsyncSessionLocal() as db:
-        await seed_demo_workspace(db=db, force=False)
+        # Seed demo workspace if not seeded
+        async with AsyncSessionLocal() as db:
+            await seed_demo_workspace(db=db, force=False)
+    except Exception as e:
+        logger.error(f"Error during database initialization: {e}")
 
     # Start persistent reminder worker
     await reminder_worker.start()
@@ -45,10 +49,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
+# CORS configuration supporting Vercel and local deployments
+origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+if not origins or "*" in origins:
+    origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,16 +73,21 @@ app.include_router(analytics.router)
 app.include_router(team.router)
 app.include_router(app_settings.router)
 
+@app.get("/")
 @app.get("/api/health")
 async def health_check():
+    is_supabase = "supabase" in settings.DATABASE_URL.lower() or "postgres" in settings.DATABASE_URL.lower()
     return {
         "status": "HEALTHY",
         "service": "MEETME Autonomous Platform",
         "philosophy": "MEETINGS IN. EXECUTION OUT.",
         "environment": settings.APP_ENV,
-        "database": "Online"
+        "database_type": "Supabase PostgreSQL" if is_supabase else "Async SQLite",
+        "groq_configured": bool(settings.GROQ_API_KEY),
+        "resend_configured": bool(settings.RESEND_API_KEY),
     }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app.main:app", host=settings.HOST, port=settings.PORT, reload=True)
+    port = int(os.environ.get("PORT", settings.PORT))
+    uvicorn.run("backend.app.main:app", host=settings.HOST, port=port, reload=settings.DEBUG)

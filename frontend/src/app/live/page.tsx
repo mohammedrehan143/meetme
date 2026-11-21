@@ -81,7 +81,17 @@ export default function LiveMeetingPage() {
 
   // Connect WebSocket when meeting starts
   const connectWebSocket = (mtgId: string) => {
-    const wsUrl = `ws://127.0.0.1:8000/ws/live-meeting/${mtgId}`;
+    let wsUrl = `ws://127.0.0.1:8000/ws/live-meeting/${mtgId}`;
+    if (process.env.NEXT_PUBLIC_WS_URL) {
+      wsUrl = `${process.env.NEXT_PUBLIC_WS_URL}/ws/live-meeting/${mtgId}`;
+    } else if (process.env.NEXT_PUBLIC_API_URL) {
+      const clean = process.env.NEXT_PUBLIC_API_URL.replace(/^http/, "ws").replace(/\/api\/?$/, "");
+      wsUrl = `${clean}/ws/live-meeting/${mtgId}`;
+    } else if (typeof window !== "undefined" && !window.location.origin.includes("localhost")) {
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      wsUrl = `${proto}//${window.location.host}/ws/live-meeting/${mtgId}`;
+    }
+
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
