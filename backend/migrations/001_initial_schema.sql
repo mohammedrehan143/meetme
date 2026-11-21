@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS email_logs (
     body_html TEXT NOT NULL,
     body_text TEXT,
     status VARCHAR(50) DEFAULT 'PENDING', -- PENDING, SENT, FAILED, QUEUED_LOCAL
-    provider VARCHAR(50) DEFAULT 'Resend',
+    provider VARCHAR(50) DEFAULT 'Gmail SMTP',
     provider_message_id VARCHAR(255),
     error_message TEXT,
     sent_at TIMESTAMP WITH TIME ZONE,

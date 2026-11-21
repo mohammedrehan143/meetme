@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.app.models.schema import Task, Approval, EmailLog, Reminder, AutomationLog, Notification
-from backend.app.services.resend_service import resend_service
+from backend.app.services.email_service import email_service
 from backend.app.agents.email_agent import email_agent
 
 logger = logging.getLogger("meetme.agents.execution")
@@ -14,6 +14,7 @@ class ExecutionAgent:
     """
     Executes approved actions with strict human authorization.
     Never sends emails or creates external schedules without verified approval.
+    Dispatches via native Gmail SMTP and schedules persistent multi-tier reminders.
     """
     async def execute_approval(
         self,
@@ -72,17 +73,19 @@ class ExecutionAgent:
         if user_id:
             approval.user_id = user_id
 
-        # 5. Generate and Send Email
+        # 5. Generate and Send Task Assignment Email via Gmail SMTP
         email_sent = False
         email_id = None
         email_status = "SKIPPED"
         error_msg = None
+        idempotency_key = f"task_assignment_{task.id}_{approval.id}"
 
         if task.assignee_email:
             email_content = payload.get("email_content")
             if not email_content:
                 email_content = email_agent.generate_task_assignment_email(
                     task={
+                        "id": task.id,
                         "title": task.title,
                         "description": task.description,
                         "assignee_name": task.assignee_name,
@@ -90,14 +93,19 @@ class ExecutionAgent:
                         "priority": task.priority,
                         "evidence_quote": task.evidence_quote,
                     },
-                    meeting_title=payload.get("meeting_title", "Sprint Execution Meeting")
+                    meeting_title=payload.get("meeting_title", "MEETME Execution Sync")
                 )
 
-            email_res = await resend_service.send_email(
+            # Send via Gmail SMTP service with idempotency key
+            email_res = await email_service.send_email(
                 to=task.assignee_email,
                 subject=email_content.get("subject", f"Action Item Assigned: {task.title}"),
                 html=email_content.get("html", "<p>Task Assigned</p>"),
-                text=email_content.get("text", "")
+                text=email_content.get("text", ""),
+                recipient_name=task.assignee_name,
+                email_type="TASK_ASSIGNMENT",
+                task_ids=[task.id],
+                idempotency_key=idempotency_key
             )
 
             email_status = email_res.get("status", "FAILED")
@@ -105,61 +113,88 @@ class ExecutionAgent:
             error_msg = email_res.get("error")
             email_sent = email_res.get("success", False)
 
-            # Persist EmailLog
+            # Persist EmailLog with Gmail SMTP provider and task tracking
             email_log = EmailLog(
                 workspace_id=task.workspace_id,
                 task_id=task.id,
+                task_ids=[task.id],
                 meeting_id=task.meeting_id,
                 recipient=task.assignee_name or "Team Member",
                 email_address=task.assignee_email,
+                email_type="TASK_ASSIGNMENT",
                 subject=email_content.get("subject", f"Action Item Assigned: {task.title}"),
                 body_html=email_content.get("html", ""),
                 body_text=email_content.get("text", ""),
                 status=email_status,
-                provider=email_res.get("provider", "Resend"),
+                provider=email_res.get("provider", "Gmail SMTP"),
+                message_id=email_id,
                 provider_message_id=email_id,
+                idempotency_key=idempotency_key,
                 error_message=error_msg,
                 sent_at=datetime.utcnow() if email_sent else None
             )
             db.add(email_log)
 
-        # 6. Schedule persistent reminders
-        # Deadline calculation
+        # 6. Schedule persistent multi-tier reminders (24h before, deadline day, 1 day after overdue)
         scheduled_reminders = []
         if task.deadline and task.assignee_email:
             try:
                 # Parse deadline (YYYY-MM-DD)
                 d_date = datetime.strptime(task.deadline, "%Y-%m-%d")
                 
-                # Pre-deadline reminder (24 hours before 9:00 AM of deadline day)
-                pre_reminder_time = d_date - timedelta(days=1, hours=15) # e.g. previous day
+                # 1. Pre-deadline reminder (24 hours before 9:00 AM of deadline day)
+                pre_reminder_time = d_date - timedelta(days=1) + timedelta(hours=9)
                 if pre_reminder_time < datetime.utcnow():
-                    pre_reminder_time = datetime.utcnow() + timedelta(minutes=5) # immediate demo or 5 mins
+                    pre_reminder_time = datetime.utcnow() + timedelta(minutes=5) # graceful fallback if deadline is tomorrow
 
                 rem1 = Reminder(
                     workspace_id=task.workspace_id,
                     task_id=task.id,
+                    task_ids=[task.id],
                     recipient=task.assignee_name or "Team Member",
                     email_address=task.assignee_email,
                     reminder_type="PRE_DEADLINE",
                     scheduled_at=pre_reminder_time,
-                    status="PENDING"
+                    status="PENDING",
+                    retry_count=0
                 )
                 db.add(rem1)
                 scheduled_reminders.append("PRE_DEADLINE")
 
-                # Deadline day reminder
+                # 2. Deadline day reminder (09:00 AM on deadline day)
+                deadline_day_time = d_date + timedelta(hours=9)
+                if deadline_day_time < datetime.utcnow():
+                    deadline_day_time = datetime.utcnow() + timedelta(minutes=10)
+
                 rem2 = Reminder(
                     workspace_id=task.workspace_id,
                     task_id=task.id,
+                    task_ids=[task.id],
                     recipient=task.assignee_name or "Team Member",
                     email_address=task.assignee_email,
                     reminder_type="DEADLINE_DAY",
-                    scheduled_at=d_date + timedelta(hours=9), # 9am deadline day
-                    status="PENDING"
+                    scheduled_at=deadline_day_time,
+                    status="PENDING",
+                    retry_count=0
                 )
                 db.add(rem2)
                 scheduled_reminders.append("DEADLINE_DAY")
+
+                # 3. Overdue reminder (1 day after deadline at 09:00 AM)
+                overdue_time = d_date + timedelta(days=1, hours=9)
+                rem3 = Reminder(
+                    workspace_id=task.workspace_id,
+                    task_id=task.id,
+                    task_ids=[task.id],
+                    recipient=task.assignee_name or "Team Member",
+                    email_address=task.assignee_email,
+                    reminder_type="OVERDUE",
+                    scheduled_at=overdue_time,
+                    status="PENDING",
+                    retry_count=0
+                )
+                db.add(rem3)
+                scheduled_reminders.append("OVERDUE")
             except Exception as e:
                 logger.warning(f"Could not parse deadline '{task.deadline}' for reminder schedule: {e}")
 
@@ -174,10 +209,11 @@ class ExecutionAgent:
                 "task_id": task.id,
                 "email_sent": email_sent,
                 "email_status": email_status,
+                "email_provider": "Gmail SMTP",
                 "reminders_scheduled": scheduled_reminders
             },
             status="SUCCESS" if (email_sent or not task.assignee_email) else "PARTIAL",
-            message=f"Task '{task.title}' approved. Email status: {email_status}. Reminders: {len(scheduled_reminders)}"
+            message=f"Task '{task.title}' approved. Gmail SMTP status: {email_status}. Reminders: {len(scheduled_reminders)}"
         )
         db.add(auto_log)
 
@@ -186,9 +222,9 @@ class ExecutionAgent:
             workspace_id=task.workspace_id,
             user_id=user_id,
             title="Task Executed",
-            message=f"'{task.title}' was approved and dispatched to {task.assignee_email or 'unassigned'}.",
+            message=f"'{task.title}' was approved and dispatched to {task.assignee_email or 'unassigned'} via Gmail SMTP.",
             type="SUCCESS",
-            link=f"/tasks"
+            link="/tasks"
         )
         db.add(notif)
 

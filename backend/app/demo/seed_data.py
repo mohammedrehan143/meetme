@@ -18,7 +18,7 @@ SAMPLE_TRANSCRIPT = """[00:00:15] Sarah Chen: Good morning everyone. Welcome to 
 [00:02:15] Sarah Chen: That is a critical observation. Let's make sure the interface has unambiguous visual indicators for recording consent and tab audio permission guides.
 [00:02:35] Sarah Chen: Elena, how is the backend and AI agent pipeline shaping up?
 [00:02:50] Elena Rostova: We finalized the decision to use Groq as our primary inference engine with LLaMA-3.3-70b-versatile and Whisper-large-v3 for sub-second latency. I will implement the FastAPI backend and Groq multi-agent orchestration pipeline by November 25.
-[00:03:25] Elena Rostova: In addition, I will integrate the Resend email execution and persistent reminder worker by November 26 so that approved tasks trigger automated assignment emails and persistent reminders.
+[00:03:25] Elena Rostova: In addition, I will integrate the Gmail SMTP email execution and persistent reminder worker by November 26 so that approved tasks trigger automated assignment emails and persistent reminders.
 [00:03:55] Sarah Chen: Fantastic. That brings us to our core governance rule: human approval is mandatory before any email execution or external notification occurs. No rogue AI actions.
 [00:04:18] Marcus Vance: I agree 100%. On the verification front, I will develop the end-to-end test suite and WebSocket stress tests by November 28.
 [00:04:45] Sarah Chen: Perfect. I will prepare the executive demo walkthrough and launch narrative by November 29.

@@ -94,14 +94,19 @@ export interface Approval {
 export interface EmailLog {
   id: string;
   task_id?: string;
+  task_ids?: string[];
+  email_type?: string;
   recipient: string;
   email_address: string;
   subject: string;
   body_html: string;
   body_text?: string;
-  status: "PENDING" | "SENT" | "FAILED" | "QUEUED_LOCAL";
+  status: "PENDING" | "SENT" | "FAILED" | "QUEUED_LOCAL" | "ALREADY_SENT" | "QUEUED_DEV";
   provider: string;
+  message_id?: string;
   provider_message_id?: string;
+  idempotency_key?: string;
+  retry_count?: number;
   error_message?: string;
   sent_at?: string;
   created_at: string;

@@ -147,17 +147,23 @@ class EmailLog(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
     task_id = Column(String(36), ForeignKey("tasks.id"), nullable=True, index=True)
+    task_ids = Column(JSON, default=list)
     meeting_id = Column(String(36), ForeignKey("meetings.id"), nullable=True)
     recipient = Column(String(255), nullable=False)
     email_address = Column(String(255), nullable=False, index=True)
+    email_type = Column(String(50), default="TASK_ASSIGNMENT") # TASK_ASSIGNMENT, CONSOLIDATED_REMINDER, PRE_DEADLINE, DEADLINE_DAY, OVERDUE, MEETING_SUMMARY
     subject = Column(String(255), nullable=False)
     body_html = Column(Text, nullable=False)
     body_text = Column(Text, nullable=True)
-    status = Column(String(50), default="PENDING") # PENDING, SENT, FAILED, QUEUED_LOCAL
-    provider = Column(String(50), default="Resend")
+    status = Column(String(50), default="PENDING") # PENDING, SENT, FAILED, QUEUED_DEV
+    provider = Column(String(50), default="Gmail SMTP")
+    message_id = Column(String(255), nullable=True)
     provider_message_id = Column(String(255), nullable=True)
-    error_message = Column(Text, nullable=True)
+    scheduled_at = Column(DateTime, nullable=True)
     sent_at = Column(DateTime, nullable=True)
+    retry_count = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    idempotency_key = Column(String(255), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Reminder(Base):
@@ -166,14 +172,16 @@ class Reminder(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
     task_id = Column(String(36), ForeignKey("tasks.id"), nullable=False, index=True)
+    task_ids = Column(JSON, default=list)
     recipient = Column(String(255), nullable=False)
     email_address = Column(String(255), nullable=False)
-    reminder_type = Column(String(50), default="PRE_DEADLINE") # PRE_DEADLINE, DEADLINE_DAY, OVERDUE
+    reminder_type = Column(String(50), default="PRE_DEADLINE") # PRE_DEADLINE, DEADLINE_DAY, OVERDUE, CONSOLIDATED
     scheduled_at = Column(DateTime, nullable=False, index=True)
     status = Column(String(50), default="PENDING") # PENDING, SENT, CANCELLED, FAILED
     retry_count = Column(Integer, default=0)
     last_error = Column(Text, nullable=True)
     executed_at = Column(DateTime, nullable=True)
+    idempotency_key = Column(String(255), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class AutomationLog(Base):

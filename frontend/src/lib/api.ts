@@ -149,6 +149,9 @@ export const api = {
       body: JSON.stringify(settings)
     });
   },
+  async testSmtp(): Promise<any> {
+    return fetchJson(`${API_BASE}/settings/test-smtp`, { method: "POST" });
+  },
   async seedDemo(force: boolean = false): Promise<any> {
     return fetchJson(`${API_BASE}/demo/seed?force=${force}`, { method: "POST" });
   },

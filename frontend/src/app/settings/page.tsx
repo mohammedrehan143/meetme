@@ -1,16 +1,24 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Settings, Cpu, Mail, Database, RefreshCw, CheckCircle2, ShieldCheck, Key } from "lucide-react";
+import { Settings, Cpu, Mail, Database, RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck, Key, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api";
 
 export default function SettingsPage() {
   const [config, setConfig] = useState<any | null>(null);
   const [groqKey, setGroqKey] = useState("");
   const [groqModel, setGroqModel] = useState("llama-3.3-70b-versatile");
-  const [resendKey, setResendKey] = useState("");
-  const [resendFrom, setResendFrom] = useState("MEETME <onboarding@resend.dev>");
+  
+  // Gmail SMTP State
+  const [smtpEmail, setSmtpEmail] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [smtpHost, setSmtpHost] = useState("smtp.gmail.com");
+  const [smtpPort, setSmtpPort] = useState(587);
+  const [smtpFromName, setSmtpFromName] = useState("MEETME Intelligence");
+
   const [saving, setSaving] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
+  const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
   const [seeding, setSeeding] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -23,7 +31,10 @@ export default function SettingsPage() {
       const data = await api.getSettings();
       setConfig(data);
       if (data?.groq?.model) setGroqModel(data.groq.model);
-      if (data?.resend?.from_email) setResendFrom(data.resend.from_email);
+      if (data?.smtp?.email) setSmtpEmail(data.smtp.email);
+      if (data?.smtp?.host) setSmtpHost(data.smtp.host);
+      if (data?.smtp?.port) setSmtpPort(data.smtp.port);
+      if (data?.smtp?.from_name) setSmtpFromName(data.smtp.from_name);
     } catch (err) {
       console.error("Failed to load settings:", err);
     }
@@ -37,17 +48,36 @@ export default function SettingsPage() {
       await api.updateSettings({
         groq_api_key: groqKey.trim() || undefined,
         groq_model: groqModel,
-        resend_api_key: resendKey.trim() || undefined,
-        resend_from_email: resendFrom.trim() || undefined,
+        smtp_email: smtpEmail.trim() || undefined,
+        smtp_password: smtpPassword.trim() || undefined,
+        smtp_host: smtpHost.trim() || undefined,
+        smtp_port: Number(smtpPort) || undefined,
+        smtp_from_name: smtpFromName.trim() || undefined,
       });
       setMessage("Configuration updated successfully.");
       setGroqKey("");
-      setResendKey("");
+      setSmtpPassword("");
       await loadSettings();
     } catch (err: any) {
       alert(`Save failed: ${err.message}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestSmtp = async () => {
+    setTestingSmtp(true);
+    setSmtpTestResult(null);
+    try {
+      const res = await api.testSmtp();
+      setSmtpTestResult(res);
+    } catch (err: any) {
+      setSmtpTestResult({
+        success: false,
+        error: err.message || "Failed to test SMTP connection."
+      });
+    } finally {
+      setTestingSmtp(false);
     }
   };
 
@@ -59,9 +89,9 @@ export default function SettingsPage() {
     setMessage(null);
     try {
       const res = await api.seedDemo(true);
-      setMessage(`Demo workspace seeded successfully! Ingested ${res.orchestration?.tasks_count} tasks.`);
+      setMessage(`Demo workspace seeded successfully! Processed ${res.tasks_count} tasks and ${res.approvals_count} approvals.`);
     } catch (err: any) {
-      alert(`Seed failed: ${err.message}`);
+      alert(`Demo reset failed: ${err.message}`);
     } finally {
       setSeeding(false);
     }
@@ -70,59 +100,56 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 max-w-4xl">
       {/* Header */}
-      <div className="pb-3 border-b border-border-subtle">
-        <h1 className="text-xl font-bold text-text-primary">System &amp; Workspace Configuration</h1>
-        <p className="text-xs text-text-secondary mt-0.5">
-          AI inference provider keys, email execution credentials, and demo simulation controls.
-        </p>
+      <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
+        <div className="flex items-center gap-2">
+          <Settings size={18} className="text-accent-orange" />
+          <h1 className="text-xl font-bold text-text-primary">System &amp; Integration Settings</h1>
+        </div>
       </div>
 
       {message && (
-        <div className="p-3.5 rounded bg-accent-neon/15 border border-accent-neon/30 text-accent-neon text-xs flex items-center gap-2">
-          <CheckCircle2 size={15} />
+        <div className="p-3 bg-accent-neon/10 border border-accent-neon/30 text-accent-neon text-xs rounded flex items-center gap-2">
+          <CheckCircle2 size={14} />
           <span>{message}</span>
         </div>
       )}
 
-      {/* Demo Seed Section */}
+      {/* Demo Seeding & Reset Section */}
       <div className="p-5 rounded bg-bg-card border border-border-subtle space-y-3">
         <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
+          <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
-              Demo Workspace Ingestion
+              Executive Demo Workspace
             </h3>
-            <p className="text-xs text-text-secondary">
-              Instantly re-seed the workspace with Sarah Chen, Rahul Sharma, Elena Rostova, and Marcus Vance. 
-              Executes the full multi-agent orchestrator pipeline on the architecture transcript.
+            <p className="text-xs text-text-secondary mt-0.5">
+              Reset the local workspace and execute the full multi-agent pipeline with verified sample transcripts.
             </p>
           </div>
-
           <button
             onClick={handleSeedDemo}
             disabled={seeding}
-            className="px-4 py-2 rounded text-xs font-semibold bg-accent-orange text-black hover:bg-accent-orange-hover disabled:opacity-50 flex items-center gap-1.5 shrink-0 transition-colors"
+            className="px-3.5 py-1.5 rounded text-xs font-semibold bg-bg-elevated border border-border-subtle hover:border-accent-orange text-text-primary flex items-center gap-2 disabled:opacity-50 transition-colors"
           >
-            <RefreshCw size={13} className={seeding ? "animate-spin" : ""} />
-            <span>{seeding ? "Orchestrating..." : "Reset & Seed Demo"}</span>
+            <RefreshCw size={13} className={seeding ? "animate-spin text-accent-orange" : ""} />
+            <span>{seeding ? "Executing Multi-Agent Pipeline..." : "Reset & Seed Demo"}</span>
           </button>
         </div>
       </div>
 
-      {/* Settings Form */}
       <form onSubmit={handleSaveSettings} className="space-y-6">
-        {/* Groq Settings */}
+        {/* Groq Engine Settings */}
         <div className="p-5 rounded bg-bg-card border border-border-subtle space-y-4">
           <div className="flex items-center justify-between border-b border-border-subtle pb-3">
             <div className="flex items-center gap-2">
               <Cpu size={16} className="text-accent-orange" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
-                Groq AI Inference Configuration (Primary Engine)
+                Groq AI Inference Engine (LPU Acceleration)
               </h3>
             </div>
             <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${
               config?.groq?.is_configured ? "bg-accent-neon/20 text-accent-neon" : "bg-bg-elevated text-text-muted"
             }`}>
-              {config?.groq?.is_configured ? "ACTIVE KEY LOADED" : "LOCAL PIPELINE ACTIVE"}
+              {config?.groq?.is_configured ? "GROQ ACTIVE" : "HEURISTIC FALLBACK MODE"}
             </span>
           </div>
 
@@ -139,12 +166,12 @@ export default function SettingsPage() {
                 className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
               />
               <span className="text-[10px] text-text-muted mt-1 block">
-                Leave empty to retain existing key. System falls back gracefully if not configured.
+                Powers real-time Whisper transcription and sub-second multi-agent orchestration.
               </span>
             </div>
 
             <div>
-              <label className="text-text-secondary block mb-1">Groq Model Identifier</label>
+              <label className="text-text-secondary block mb-1">LLM Model</label>
               <select
                 value={groqModel}
                 onChange={(e) => setGroqModel(e.target.value)}
@@ -161,49 +188,118 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Resend Email Settings */}
+        {/* Native Gmail SMTP Settings */}
         <div className="p-5 rounded bg-bg-card border border-border-subtle space-y-4">
           <div className="flex items-center justify-between border-b border-border-subtle pb-3">
             <div className="flex items-center gap-2">
               <Mail size={16} className="text-accent-neon" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-text-primary">
-                Email Provider Configuration (Resend Engine)
+                Native Gmail SMTP Email Service (STARTTLS Port 587)
               </h3>
             </div>
             <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded ${
-              config?.resend?.is_configured ? "bg-accent-neon/20 text-accent-neon" : "bg-bg-elevated text-text-muted"
+              config?.smtp?.is_configured ? "bg-accent-neon/20 text-accent-neon" : "bg-bg-elevated text-text-muted"
             }`}>
-              {config?.resend?.is_configured ? "RESEND ACTIVE" : "LOCAL QUEUE MODE"}
+              {config?.smtp?.is_configured ? "GMAIL SMTP ACTIVE" : "DEV / LOCAL QUEUE MODE"}
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="text-text-secondary block mb-1">
-                Resend API Key {config?.resend?.is_configured && `(Current: ${config.resend.masked_key})`}
-              </label>
+              <label className="text-text-secondary block mb-1">Gmail Address (Sender)</label>
               <input
-                type="password"
-                value={resendKey}
-                onChange={(e) => setResendKey(e.target.value)}
-                placeholder="re_..."
+                type="email"
+                value={smtpEmail}
+                onChange={(e) => setSmtpEmail(e.target.value)}
+                placeholder="yourmail@gmail.com"
                 className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
               />
               <span className="text-[10px] text-text-muted mt-1 block">
-                If omitted, emails are queued locally and logged in the Email Audit Log.
+                Primary Gmail or Google Workspace address.
               </span>
             </div>
 
             <div>
-              <label className="text-text-secondary block mb-1">Sender Email Address</label>
+              <label className="text-text-secondary block mb-1">
+                Google App Password {config?.smtp?.is_configured && `(Current: ${config.smtp.masked_password})`}
+              </label>
+              <input
+                type="password"
+                value={smtpPassword}
+                onChange={(e) => setSmtpPassword(e.target.value)}
+                placeholder="16-character app password (e.g. abcd efgh ijkl mnop)"
+                className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+              />
+              <span className="text-[10px] text-text-muted mt-1 block">
+                Generated from Google Account &rarr; Security &rarr; 2-Step Verification &rarr; App Passwords.
+              </span>
+            </div>
+
+            <div>
+              <label className="text-text-secondary block mb-1">SMTP Host</label>
               <input
                 type="text"
-                value={resendFrom}
-                onChange={(e) => setResendFrom(e.target.value)}
-                placeholder="MEETME <onboarding@resend.dev>"
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
+                placeholder="smtp.gmail.com"
                 className="w-full bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
               />
             </div>
+
+            <div>
+              <label className="text-text-secondary block mb-1">SMTP Port &amp; Display Name</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={smtpPort}
+                  onChange={(e) => setSmtpPort(Number(e.target.value))}
+                  placeholder="587"
+                  className="w-24 bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange font-mono"
+                />
+                <input
+                  type="text"
+                  value={smtpFromName}
+                  onChange={(e) => setSmtpFromName(e.target.value)}
+                  placeholder="MEETME Intelligence"
+                  className="flex-1 bg-bg-elevated border border-border-subtle rounded px-3 py-1.5 text-text-primary focus:outline-none focus:border-accent-orange"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Test SMTP Connection Action & Status */}
+          <div className="pt-2 border-t border-border-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestSmtp}
+                disabled={testingSmtp}
+                className="px-3.5 py-1.5 rounded text-xs font-semibold bg-bg-elevated border border-border-subtle hover:border-accent-neon text-text-primary flex items-center gap-2 disabled:opacity-50 transition-colors"
+              >
+                <ShieldCheck size={14} className={testingSmtp ? "animate-spin text-accent-neon" : "text-accent-neon"} />
+                <span>{testingSmtp ? "Testing STARTTLS Handshake..." : "Test Gmail SMTP Connection"}</span>
+              </button>
+
+              {smtpTestResult && (
+                <span className={`text-xs font-mono px-2.5 py-1 rounded border ${
+                  smtpTestResult.success
+                    ? "bg-accent-neon/15 text-accent-neon border-accent-neon/30"
+                    : "bg-red-500/15 text-red-400 border-red-500/30"
+                }`}>
+                  {smtpTestResult.success ? smtpTestResult.message : smtpTestResult.error}
+                </span>
+              )}
+            </div>
+
+            <a
+              href="https://myaccount.google.com/apppasswords"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-accent-orange hover:underline flex items-center gap-1 font-mono"
+            >
+              <span>How to generate a Google App Password</span>
+              <ExternalLink size={11} />
+            </a>
           </div>
         </div>
 

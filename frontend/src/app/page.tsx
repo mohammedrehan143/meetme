@@ -82,7 +82,7 @@ export default function Dashboard() {
     { label: "Tasks Identified", value: metrics.tasks_identified, sub: `${metrics.completion_rate}% Completed`, accent: "text-accent-neon" },
     { label: "Pending Approvals", value: metrics.pending_approvals, sub: "Requires human signoff", accent: metrics.pending_approvals > 0 ? "text-accent-orange" : "text-text-primary" },
     { label: "Overdue Tasks", value: metrics.overdue_tasks, sub: "Reminders active", accent: metrics.overdue_tasks > 0 ? "text-red-400" : "text-text-primary" },
-    { label: "Emails Dispatched", value: metrics.emails_sent, sub: "Via Resend Engine" },
+    { label: "Emails Dispatched", value: metrics.emails_sent, sub: "Via Gmail SMTP Engine" },
     { label: "Upcoming Deadlines", value: metrics.upcoming_deadlines, sub: "Next 7 Days" },
   ];
 

@@ -80,6 +80,25 @@ async def get_db():
             await session.close()
 
 async def init_db():
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # SQLite column migration helper if tables existed prior to migration
+        if "sqlite" in settings.DATABASE_URL.lower():
+            for col, col_type in [
+                ("task_ids", "TEXT"),
+                ("email_type", "VARCHAR(50)"),
+                ("message_id", "VARCHAR(255)"),
+                ("idempotency_key", "VARCHAR(255)"),
+                ("retry_count", "INTEGER DEFAULT 0"),
+                ("scheduled_at", "TIMESTAMP")
+            ]:
+                try:
+                    await conn.execute(text(f"ALTER TABLE email_logs ADD COLUMN {col} {col_type}"))
+                except Exception:
+                    pass
+            try:
+                await conn.execute(text("ALTER TABLE reminders ADD COLUMN task_ids TEXT"))
+            except Exception:
+                pass
     logger.info("Database tables verified/created successfully.")

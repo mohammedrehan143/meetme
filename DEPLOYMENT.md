@@ -61,8 +61,12 @@ This guide details how to deploy MEETME to production in under 10 minutes using:
    | `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | Supabase Service Role Key |
    | `GROQ_API_KEY` | `gsk_...` | Groq API Key |
    | `GROQ_MODEL` | `llama-3.3-70b-versatile` | Supported fast model |
-   | `RESEND_API_KEY` | `re_...` | Resend API Key |
-   | `RESEND_FROM_EMAIL` | `MEETME <onboarding@resend.dev>` | Verified Resend sender |
+   | `SMTP_HOST` | `smtp.gmail.com` | Native Gmail SMTP Host |
+   | `SMTP_PORT` | `587` | STARTTLS Port |
+   | `SMTP_EMAIL` | `yourcompany@gmail.com` | Gmail sender address |
+   | `SMTP_PASSWORD` | `xxxx xxxx xxxx xxxx` | 16-character Google App Password |
+   | `SMTP_FROM_NAME` | `MEETME Intelligence` | Display sender name |
+   | `APP_FRONTEND_URL` | `https://your-frontend.vercel.app` | Frontend URL for email task links |
    | `CORS_ORIGINS` | `*` or `https://your-frontend.vercel.app` | Allows Vercel frontend |
    | `PYTHONPATH` | `.` | Python module resolver |
    | `APP_ENV` | `production` | Production mode |
@@ -100,7 +104,7 @@ This guide details how to deploy MEETME to production in under 10 minutes using:
    - Navigate to **Settings** &rarr; click **Reset & Seed Demo** to verify database write and agent pipeline execution.
 2. Navigate to **Approvals**:
    - Verify pending approvals are loaded from Supabase.
-   - Click **Approve** on a task and check the Resend dispatch and reminder creation.
+   - Click **Approve** on a task and check the Gmail SMTP dispatch and reminder creation.
 3. Navigate to **Live Meeting**:
    - Verify WebSocket connection to the Render backend (`CONNECTED`).
    - Start recording and verify dual-stream audio capture and live streaming classification.

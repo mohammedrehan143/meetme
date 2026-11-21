@@ -123,8 +123,8 @@ class TaskAgent:
                 priority = "URGENT"
                 evidence = line_str
                 is_task = True
-            elif "resend email" in c_lower or "email automation" in c_lower or "reminder worker" in c_lower:
-                title = "Integrate Resend email execution and persistent reminder worker"
+            elif "gmail smtp" in c_lower or "email automation" in c_lower or "reminder worker" in c_lower or "email execution" in c_lower:
+                title = "Integrate Gmail SMTP email execution and persistent reminder worker"
                 assignee = "Elena Rostova"
                 deadline = "2026-11-26"
                 priority = "HIGH"

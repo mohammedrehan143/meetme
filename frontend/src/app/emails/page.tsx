@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Mail, CheckCircle2, AlertTriangle, RotateCw, Eye, X, Send } from "lucide-react";
+import { Mail, CheckCircle2, AlertTriangle, RotateCw, Eye, X, Send, Layers, Clock, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { EmailLog } from "@/lib/types";
 
@@ -39,6 +39,10 @@ export default function EmailActivityPage() {
     }
   };
 
+  const totalSent = emails.filter((e) => e.status === "SENT").length;
+  const totalFailed = emails.filter((e) => e.status === "FAILED").length;
+  const totalConsolidated = emails.filter((e) => e.email_type?.startsWith("CONSOLIDATED_") || (e.task_ids && e.task_ids.length > 1)).length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -49,7 +53,7 @@ export default function EmailActivityPage() {
             <h1 className="text-xl font-bold text-text-primary">Email Execution Audit Log</h1>
           </div>
           <p className="text-xs text-text-secondary mt-0.5">
-            Full audit log of task notifications, reminders, and executive summaries dispatched via Resend.
+            Full audit log of task notifications, consolidated digests, and reminders dispatched via Native Gmail SMTP.
           </p>
         </div>
 
@@ -62,11 +66,38 @@ export default function EmailActivityPage() {
         </button>
       </div>
 
+      {/* Metrics Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="p-4 rounded bg-bg-card border border-border-subtle space-y-1">
+          <span className="text-[10px] font-mono text-text-muted uppercase">Total Dispatched</span>
+          <p className="text-2xl font-bold font-mono text-accent-neon">{totalSent}</p>
+          <span className="text-[11px] text-text-secondary">Delivered via Gmail SMTP</span>
+        </div>
+        <div className="p-4 rounded bg-bg-card border border-border-subtle space-y-1">
+          <span className="text-[10px] font-mono text-text-muted uppercase">Consolidated Digests</span>
+          <p className="text-2xl font-bold font-mono text-accent-orange">{totalConsolidated}</p>
+          <span className="text-[11px] text-text-secondary">Multi-task grouped emails</span>
+        </div>
+        <div className="p-4 rounded bg-bg-card border border-border-subtle space-y-1">
+          <span className="text-[10px] font-mono text-text-muted uppercase">Failed Sends</span>
+          <p className="text-2xl font-bold font-mono text-red-400">{totalFailed}</p>
+          <span className="text-[11px] text-text-secondary">Exponential backoff active</span>
+        </div>
+        <div className="p-4 rounded bg-bg-card border border-border-subtle space-y-1">
+          <span className="text-[10px] font-mono text-text-muted uppercase">Native Provider</span>
+          <p className="text-sm font-bold font-mono text-text-primary flex items-center gap-1.5 pt-1.5">
+            <ShieldCheck size={16} className="text-accent-neon" />
+            <span>Gmail SMTP (587)</span>
+          </p>
+          <span className="text-[11px] text-text-secondary">STARTTLS Authenticated</span>
+        </div>
+      </div>
+
       {/* Emails Table */}
       <div className="rounded bg-bg-card border border-border-subtle overflow-hidden">
         <div className="p-3 bg-bg-secondary border-b border-border-subtle flex items-center justify-between text-xs font-mono text-text-muted">
-          <span>Recipient &amp; Subject</span>
-          <span>Status &amp; Provider Message ID</span>
+          <span>Recipient, Subject &amp; Related Tasks</span>
+          <span>Status &amp; Message ID</span>
         </div>
 
         <div className="divide-y divide-border-subtle">
@@ -77,23 +108,43 @@ export default function EmailActivityPage() {
           ) : (
             emails.map((e) => {
               const isSuccess = e.status === "SENT";
-              const isQueued = e.status === "QUEUED_LOCAL";
+              const isQueued = e.status === "QUEUED_LOCAL" || e.status === "QUEUED_DEV";
               const isFailed = e.status === "FAILED";
+              const taskCount = e.task_ids ? e.task_ids.length : e.task_id ? 1 : 0;
+              const isConsolidated = e.email_type?.startsWith("CONSOLIDATED_") || taskCount > 1;
 
               return (
                 <div
                   key={e.id}
                   className="p-4 hover:bg-bg-elevated/40 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-1.5 max-w-xl">
+                    <div className="flex flex-wrap items-center gap-2">
                       <strong className="text-text-primary">{e.subject}</strong>
+                      
+                      {e.email_type && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-bg-elevated text-text-secondary border border-border-subtle">
+                          {e.email_type}
+                        </span>
+                      )}
+
+                      {isConsolidated && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-accent-orange/20 text-accent-orange border border-accent-orange/30 flex items-center gap-1">
+                          <Layers size={10} />
+                          <span>Consolidated ({taskCount} Tasks)</span>
+                        </span>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-3 text-text-secondary font-mono text-[11px]">
+                    <div className="flex flex-wrap items-center gap-3 text-text-secondary font-mono text-[11px]">
                       <span>To: <strong className="text-text-primary">{e.recipient}</strong> ({e.email_address})</span>
-                      <span>Provider: <strong className="text-text-primary">{e.provider}</strong></span>
-                      {e.sent_at && <span>Sent: {new Date(e.sent_at).toLocaleTimeString()}</span>}
+                      <span>Provider: <strong className="text-text-primary">{e.provider || "Gmail SMTP"}</strong></span>
+                      {e.sent_at && (
+                        <span className="flex items-center gap-1">
+                          <Clock size={11} className="text-text-muted" />
+                          <span>Sent: {new Date(e.sent_at).toLocaleTimeString()} ({new Date(e.sent_at).toLocaleDateString()})</span>
+                        </span>
+                      )}
                     </div>
 
                     {e.error_message && (
@@ -112,9 +163,9 @@ export default function EmailActivityPage() {
                       }`}>
                         {e.status}
                       </span>
-                      {e.provider_message_id && (
-                        <div className="text-[9px] text-text-muted mt-1 truncate max-w-[120px]">
-                          {e.provider_message_id}
+                      {e.message_id && (
+                        <div className="text-[9px] text-text-muted mt-1 truncate max-w-[140px]" title={e.message_id}>
+                          {e.message_id}
                         </div>
                       )}
                     </div>
@@ -153,7 +204,7 @@ export default function EmailActivityPage() {
               <div className="flex items-center gap-2">
                 <Mail size={16} className="text-accent-orange" />
                 <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">
-                  Email Dispatch Audit Payload
+                  Gmail SMTP Dispatch Audit Payload
                 </h3>
               </div>
               <button
@@ -168,6 +219,10 @@ export default function EmailActivityPage() {
               <div className="p-2.5 bg-bg-elevated rounded border border-border-subtle font-mono text-[11px] space-y-1">
                 <div><span className="text-text-muted">To: </span><strong className="text-text-primary">{previewEmail.recipient} &lt;{previewEmail.email_address}&gt;</strong></div>
                 <div><span className="text-text-muted">Subject: </span><strong className="text-text-primary">{previewEmail.subject}</strong></div>
+                <div><span className="text-text-muted">Message ID: </span><strong className="text-text-primary">{previewEmail.message_id || previewEmail.provider_message_id || "N/A"}</strong></div>
+                {previewEmail.idempotency_key && (
+                  <div><span className="text-text-muted">Idempotency Key: </span><span className="text-text-secondary">{previewEmail.idempotency_key}</span></div>
+                )}
               </div>
 
               <div

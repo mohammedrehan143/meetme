@@ -1,7 +1,7 @@
 # MEETME — AI Meeting Intelligence & Autonomous Execution Platform
 > **"MEETINGS IN. EXECUTION OUT."**
 
-MEETME is an intelligent execution platform that listens to meetings, understands conversations in real time, classifies dialogue, extracts action items and decisions, maps responsibilities with confidence scoring, enforces mandatory human approval, dispatches assignment emails via Resend, and manages persistent automated reminder cycles.
+MEETME is an intelligent execution platform that listens to meetings, understands conversations in real time, classifies dialogue, extracts action items and decisions, maps responsibilities with confidence scoring, enforces mandatory human approval, dispatches assignment emails via native Gmail SMTP, and manages persistent automated reminder cycles.
 
 ---
 
@@ -30,8 +30,8 @@ MANDATORY HUMAN APPROVAL GATE (Audit, edit parameters, inspect diff & evidence)
        ▼
 EXECUTION AGENT
   ├── Database Persistence (Supabase PostgreSQL / Async SQLite)
-  ├── Email Automation (Resend API execution & audit logs)
-  └── Persistent Reminder Worker (Background job queue, retry backoff, auto-cancellation on completion)
+  ├── Email Automation (Native Gmail SMTP with STARTTLS & audit logs)
+  └── Persistent Reminder Worker (Background job queue, consolidated digests, retry backoff, auto-cancellation on completion)
 ```
 
 ---
@@ -85,7 +85,8 @@ MEETME adheres to a strict, dark-mode, enterprise productivity aesthetic inspire
 - Idempotency and exponential backoff retry on transient provider errors.
 
 ### 6. Email Execution & Audit (`/emails`)
-- Integrated with Resend API for transactional email delivery.
+- Integrated with native Gmail SMTP (STARTTLS port 587) using Python's `smtplib`.
+- Features consolidated email digests: groups multiple tasks due for the same recipient under the same trigger into one executive email.
 - Includes local test mode queue logging when credentials are not configured.
 - Inspect full HTML and plaintext delivery payloads and retry failed sends.
 
@@ -132,9 +133,14 @@ GROQ_API_KEY=gsk_your_groq_api_key_here
 GROQ_MODEL=llama-3.3-70b-versatile
 GROQ_WHISPER_MODEL=whisper-large-v3
 
-# Email Provider
-RESEND_API_KEY=re_your_resend_api_key_here
-RESEND_FROM_EMAIL=MEETME <onboarding@resend.dev>
+# Native Gmail SMTP Email Provider
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_EMAIL=yourmail@gmail.com
+SMTP_PASSWORD=your_google_app_password
+SMTP_FROM_NAME=MEETME Intelligence
+SMTP_TIMEOUT=10
+APP_FRONTEND_URL=http://localhost:3000
 
 # Database (Default: Async SQLite, or Supabase PostgreSQL)
 DATABASE_URL=sqlite+aiosqlite:///./meetme.db
@@ -142,7 +148,14 @@ DATABASE_URL=sqlite+aiosqlite:///./meetme.db
 # SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-key
 ```
 
-*Note: If `GROQ_API_KEY` or `RESEND_API_KEY` are omitted, MEETME automatically uses its deterministic heuristic parsing engine and local email audit queue, allowing full end-to-end testing without external API credentials.*
+*Note: If `GROQ_API_KEY` or `SMTP_EMAIL`/`SMTP_PASSWORD` are omitted, MEETME automatically uses its deterministic heuristic parsing engine and local email audit queue, allowing full end-to-end testing without external API credentials.*
+
+### Generating a Google App Password
+1. Navigate to your [Google Account Security Settings](https://myaccount.google.com/security).
+2. Ensure **2-Step Verification** is turned **ON**.
+3. Under *2-Step Verification*, search for or click on **App Passwords**.
+4. Create a new app name (e.g. `MEETME Production`).
+5. Copy the generated 16-character password into `SMTP_PASSWORD`.
 
 ---
 

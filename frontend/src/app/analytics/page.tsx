@@ -73,7 +73,7 @@ export default function AnalyticsPage() {
         <div className="p-4 rounded bg-bg-card border border-border-subtle space-y-1">
           <span className="text-[10px] font-mono text-text-muted uppercase">Emails Dispatched</span>
           <p className="text-2xl font-bold font-mono text-text-primary">{metrics.emails_sent}</p>
-          <span className="text-[11px] text-text-secondary">Resend provider verified</span>
+          <span className="text-[11px] text-text-secondary">Gmail SMTP verified</span>
         </div>
       </div>
 

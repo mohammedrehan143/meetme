@@ -120,6 +120,7 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     old_status = task.status
+    old_deadline = task.deadline
     if payload.title is not None:
         task.title = payload.title
     if payload.description is not None:
@@ -138,6 +139,11 @@ async def update_task(
         task.status = payload.status
 
     task.updated_at = datetime.utcnow()
+
+    # If deadline updated and changed, recalculate pending reminders
+    if payload.deadline is not None and payload.deadline != old_deadline:
+        from backend.app.services.reminder_worker import reminder_worker
+        await reminder_worker.recalculate_task_reminders(db, task.id, payload.deadline)
 
     # If status transitioned to COMPLETED or REJECTED, automatically cancel pending reminders!
     if task.status in ["COMPLETED", "REJECTED"] and old_status not in ["COMPLETED", "REJECTED"]:

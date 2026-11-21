@@ -340,7 +340,7 @@ export default function ApprovalsPage() {
                       <button
                         onClick={() => setPreviewEmailModal(p.email_content)}
                         className="px-2.5 py-1 text-xs font-medium bg-bg-elevated border border-border-subtle hover:border-border-strong text-text-primary rounded flex items-center gap-1"
-                        title="Preview generated Resend email template"
+                        title="Preview generated Gmail SMTP email template"
                       >
                         <Eye size={12} />
                         <span>Email Preview</span>
@@ -497,7 +497,7 @@ export default function ApprovalsPage() {
               <div className="flex items-center gap-2">
                 <Mail size={16} className="text-accent-orange" />
                 <h3 className="text-xs font-bold text-text-primary uppercase tracking-wider">
-                  Resend Email Template Preview
+                  Gmail SMTP Email Template Preview
                 </h3>
               </div>
               <button

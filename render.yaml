@@ -24,9 +24,17 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
-      - key: RESEND_API_KEY
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_EMAIL
         sync: false
-      - key: RESEND_FROM_EMAIL
-        value: MEETME <onboarding@resend.dev>
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: MEETME Intelligence
+      - key: APP_FRONTEND_URL
+        value: https://your-meetme-frontend.vercel.app
       - key: CORS_ORIGINS
         value: "*"

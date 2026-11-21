@@ -84,7 +84,7 @@ async def health_check():
         "environment": settings.APP_ENV,
         "database_type": "Supabase PostgreSQL" if is_supabase else "Async SQLite",
         "groq_configured": bool(settings.GROQ_API_KEY),
-        "resend_configured": bool(settings.RESEND_API_KEY),
+        "smtp_configured": bool(settings.SMTP_EMAIL and settings.SMTP_PASSWORD),
     }
 
 if __name__ == "__main__":
