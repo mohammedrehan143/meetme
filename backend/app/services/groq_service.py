@@ -61,9 +61,16 @@ class GroqService:
                             "usage": usage,
                             "fallback": False
                         }
-                    elif response.status_code == 429 and attempt < max_retries:
-                        logger.warning(f"Groq API 429 rate limit (attempt {attempt + 1}/{max_retries + 1}). Backing off for 4 seconds...")
-                        await asyncio.sleep(4.0)
+                    elif response.status_code == 429:
+                        err_text = response.text
+                        if "tokens per day" in err_text or "TPD" in err_text or attempt >= max_retries:
+                            logger.warning("Groq daily rate limit reached. Falling back immediately.")
+                            return {
+                                "fallback": True,
+                                "error": f"Groq HTTP 429: {err_text}"
+                            }
+                        logger.warning(f"Groq API 429 rate limit (attempt {attempt + 1}/{max_retries + 1}). Backing off...")
+                        await asyncio.sleep(1.0)
                         continue
                     else:
                         logger.error(f"Groq API error {response.status_code}: {response.text}")

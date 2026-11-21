@@ -185,16 +185,31 @@ class AssignmentAgent:
     def _extract_speaker_or_owner_from_text(self, evidence: str, desc: str, title: str) -> Optional[str]:
         combined = f"{evidence}\n{desc}\n{title}"
 
-        # 1. Look for explicit owner labels: "Assignee: Sarah", "Owner: DevOps Lead", "Assigned to: Alex"
-        owner_match = re.search(r"(?:assignee|assigned to|owner|lead|poc):\s*([^,\n\.]+)", combined, re.IGNORECASE)
+        # 1. Look for explicit owner labels: "Assignee: Sarah", "Assigned to Alex", "Task for Marcus"
+        owner_match = re.search(
+            r"(?:assignee|assigned to|assign to|assigning to|assign this to|task for|action item for|owner|lead|poc):?\s*([A-Za-z0-9_\(\)\.\-]+(?:\s+[A-Za-z0-9_\(\)\.\-]+)?)",
+            combined,
+            re.IGNORECASE
+        )
         if owner_match:
             candidate = owner_match.group(1).strip()
-            if candidate.lower() not in AMBIGUOUS_TERMS:
+            if candidate.lower() not in AMBIGUOUS_TERMS and candidate.lower() not in ["anyone", "someone", "the", "this"]:
                 return candidate
 
-        # 2. Look for speaker tag before colon in evidence: "[00:01:23] Alex (DevOps): ..." or "Sarah Chen: ..."
+        # 2. Look for addressed member in evidence: "Sarah, please...", "Alex, can you...", "Marcus: please..."
         for line in evidence.split("\n"):
             line = line.strip()
+            # Direct instruction pattern
+            inst_match = re.search(
+                r"(?:^|:\s*|\s+)(?:hey\s+)?([A-Za-z]+)(?:,\s*|\s+)(?:please|can you|could you|would you|you need to|you should|you take|take care of|handle|fix|implement|deploy|review|test|build|write|create|update)\b",
+                line,
+                re.IGNORECASE
+            )
+            if inst_match:
+                cand = inst_match.group(1).strip()
+                if cand.lower() not in AMBIGUOUS_TERMS and cand.lower() not in ["anyone", "someone", "everyone", "today", "tomorrow", "also", "well", "now", "here"]:
+                    return cand
+
             speaker_match = re.match(r"^(?:\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*)?([^:\n]+?):\s*(.*)$", line)
             if speaker_match:
                 spk = speaker_match.group(2).strip()
@@ -203,10 +218,6 @@ class AssignmentAgent:
                     # If speaker took commitment or spoke in first person
                     if any(c in speech for c in ["i will", "i'll", "i am going to", "i can", "i take", "my task", "on it"]):
                         return spk
-                    # Or direct instruction "Alex, please deploy..."
-                    inst_match = re.search(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b,\s*(?:please|can you|could you|take care of)", line)
-                    if inst_match and inst_match.group(1).lower() not in AMBIGUOUS_TERMS:
-                        return inst_match.group(1).strip()
                     return spk
         return None
 

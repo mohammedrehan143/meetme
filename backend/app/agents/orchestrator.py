@@ -76,6 +76,13 @@ class OrchestratorAgent:
         # Step 2: Task Extraction Agent
         raw_tasks = await task_agent.extract_tasks(transcript_text, classified_segments)
 
+        # Ensure transcript segments that produced tasks are marked as TASK
+        for t in raw_tasks:
+            ev = (t.get("evidence") or "").strip().lower()
+            for tr in saved_transcripts:
+                if tr.classification != "TASK" and ev and (tr.text.lower() in ev or ev in tr.text.lower()):
+                    tr.classification = "TASK"
+
         # Step 3: Assignment Agent
         assigned_tasks = assignment_agent.match_assignments(raw_tasks, members_dict)
 

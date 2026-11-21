@@ -10,6 +10,7 @@ from backend.app.models.schema import Meeting, MeetingTranscript, Task, Workspac
 from backend.app.agents.transcription_agent import transcription_agent
 from backend.app.agents.task_agent import task_agent
 from backend.app.agents.decision_agent import decision_agent
+from backend.app.agents.assignment_agent import assignment_agent
 
 logger = logging.getLogger("meetme.api.live")
 
@@ -70,7 +71,7 @@ async def websocket_live_meeting(websocket: WebSocket, meeting_id: str):
                 if not text:
                     continue
 
-                # Run fast classification
+                # Run fast transcription analysis
                 analysis = await transcription_agent.analyze(f"{speaker}: {text}")
                 seg = analysis[0] if analysis else {
                     "classification": "GENERAL_DISCUSSION",
@@ -79,8 +80,66 @@ async def websocket_live_meeting(websocket: WebSocket, meeting_id: str):
 
                 classification = seg.get("classification", "GENERAL_DISCUSSION")
 
+                # Try task extraction to see if an action item or assignment was directed to someone
+                tasks = await task_agent.extract_tasks(f"{speaker}: {text}")
+                detected_task = tasks[0] if tasks else None
+
+                if detected_task:
+                    classification = "TASK"
+
+                detected_decision = None
+                if classification == "DECISION":
+                    decisions = await decision_agent.extract_decisions(f"{speaker}: {text}")
+                    if decisions.get("decisions"):
+                        detected_decision = decisions["decisions"][0]
+
                 # Persist to database
                 async with AsyncSessionLocal() as db:
+                    # Get meeting to find workspace_id
+                    stmt_m = select(Meeting).where(Meeting.id == meeting_id)
+                    res_m = await db.execute(stmt_m)
+                    mtg = res_m.scalar_one_or_none()
+                    ws_id = mtg.workspace_id if mtg else "ws-demo-001"
+
+                    # If task detected, resolve assignee against workspace members
+                    if detected_task:
+                        m_stmt = select(WorkspaceMember).where(WorkspaceMember.workspace_id == ws_id)
+                        m_res = await db.execute(m_stmt)
+                        members = m_res.scalars().all()
+                        members_dict = [
+                            {"id": m.id, "full_name": m.full_name, "email": m.email, "role": m.role, "title": m.title}
+                            for m in members
+                        ]
+                        assigned_tasks = assignment_agent.match_assignments([detected_task], members_dict)
+                        if assigned_tasks:
+                            detected_task = assigned_tasks[0]
+                            # Display friendly assignee
+                            detected_task["assignee"] = detected_task.get("assignee_name") or detected_task.get("assignee")
+
+                        # Persist task in database if not duplicate
+                        t_title = detected_task.get("title", "")
+                        if t_title:
+                            dup_stmt = select(Task).where(Task.meeting_id == meeting_id, Task.title == t_title)
+                            dup_res = await db.execute(dup_stmt)
+                            existing_t = dup_res.scalar_one_or_none()
+                            if not existing_t:
+                                new_t = Task(
+                                    workspace_id=ws_id,
+                                    meeting_id=meeting_id,
+                                    title=t_title,
+                                    description=detected_task.get("description"),
+                                    assignee_id=detected_task.get("assignee_id"),
+                                    assignee_name=detected_task.get("assignee_name"),
+                                    assignee_email=detected_task.get("assignee_email"),
+                                    deadline=detected_task.get("deadline"),
+                                    priority=detected_task.get("priority", "MEDIUM"),
+                                    dependencies=detected_task.get("dependencies", []),
+                                    confidence=detected_task.get("confidence", 0.92),
+                                    classification_type=detected_task.get("classification_type", "EXPLICIT"),
+                                    status="AWAITING_APPROVAL"
+                                )
+                                db.add(new_t)
+
                     tr = MeetingTranscript(
                         meeting_id=meeting_id,
                         speaker_name=speaker,
@@ -90,20 +149,6 @@ async def websocket_live_meeting(websocket: WebSocket, meeting_id: str):
                         confidence=seg.get("confidence", 0.9)
                     )
                     db.add(tr)
-
-                    # If classification is TASK or DECISION, extract structured item on the fly!
-                    detected_task = None
-                    if classification in ["TASK", "COMMITMENT"]:
-                        tasks = await task_agent.extract_tasks(f"{speaker}: {text}")
-                        if tasks:
-                            detected_task = tasks[0]
-
-                    detected_decision = None
-                    if classification == "DECISION":
-                        decisions = await decision_agent.extract_decisions(f"{speaker}: {text}")
-                        if decisions.get("decisions"):
-                            detected_decision = decisions["decisions"][0]
-
                     await db.commit()
 
                 # Broadcast live event to all connected clients

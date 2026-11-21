@@ -102,101 +102,200 @@ class TaskAgent:
         tasks = []
         import re
 
-        # Base date for relative deadlines
         base_date = datetime(2026, 11, 21)
+        weekday_map = {"monday": 2, "tuesday": 3, "wednesday": 4, "thursday": 5, "friday": 6, "saturday": 0, "sunday": 1}
 
         lines = transcript_text.strip().split("\n")
         for line in lines:
             line_str = line.strip()
             if not line_str:
                 continue
-            lower = line_str.lower()
             
-            # Robust speaker match supporting parentheses, hyphens, brackets, roles
-            # e.g. "[00:01:23] Alex (DevOps Lead): I'll deploy the app"
+            # Robust speaker match: "[00:01:23] Alex (DevOps Lead): I'll deploy the app"
             speaker_match = re.match(r"^(?:\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*)?([^:\n]+?):\s*(.*)$", line_str)
             speaker = speaker_match.group(2).strip() if speaker_match else ""
             content = speaker_match.group(3).strip() if speaker_match else line_str
-            c_lower = content.lower()
+            c_lower = content.lower().strip()
 
             is_task = False
-            priority = "MEDIUM"
-            assignee = speaker if speaker else None
+            priority = "HIGH" if any(w in c_lower for w in ["urgent", "asap", "blocker", "today", "critical", "immediately"]) else "MEDIUM"
+            assignee = None
             evidence = line_str
             title = None
             deadline = None
             classification_type = "EXPLICIT"
-            confidence = 0.92
+            confidence = 0.94
 
-            # Check if an explicit owner/assignee is tagged inside the message
-            assigned_to_match = re.search(
-                r"(?:assigned to|assign to|owner is|assignee:?|owner:?|lead:?)\s*([A-Za-z0-9_\s\(\)\.\-]+)",
+            # 1. Check for specific assignee patterns in content
+            # A. Subject assignment syntax: "David is assigned to...", "Sarah will handle...", "Sarah is responsible for..."
+            subj_match = re.search(
+                r"\b([A-Za-z]+)\s+(?:is\s+assigned\s+to|is\s+responsible\s+for|will\s+take\s+care\s+of|will\s+handle|will\s+lead|to\s+handle)\b",
                 content,
                 re.IGNORECASE
             )
-            if assigned_to_match:
-                candidate = assigned_to_match.group(1).strip()
-                if candidate.lower() not in ["anyone", "someone", "tbd", "unassigned"]:
-                    assignee = candidate
+            if subj_match:
+                cand = subj_match.group(1).strip()
+                if cand.lower() not in ["anyone", "someone", "we", "they", "who", "it", "this"]:
+                    assignee = cand
+                    is_task = True
 
-            # Extract common task intents
-            if "finish the frontend" in c_lower or "complete frontend" in c_lower:
-                title = "Complete frontend implementation and responsive UI"
-                assignee = speaker or "Rahul Sharma"
-                deadline = "2026-11-27"
-                priority = "HIGH"
+            # B. Direct assignment syntax: "assign to Sarah", "assigning this task to Alex", "task for Marcus:"
+            if not assignee:
+                assign_match = re.search(
+                    r"(?:assign(?:ed|ing)?\s+(?:(?:this\s+)?(?:task|action\s+item|ticket|issue)\s+)?to|task\s+for|action\s+item\s+for|owner\s+is|assignee:?|owner:?|lead:?)\s*([A-Za-z0-9_\(\)\.\-]+(?:\s+[A-Za-z0-9_\(\)\.\-]+)?)",
+                    content,
+                    re.IGNORECASE
+                )
+                if assign_match:
+                    cand = assign_match.group(1).strip()
+                    if cand.lower() not in ["anyone", "someone", "tbd", "unassigned", "the", "a", "this", "configure", "implement", "deploy", "build", "write", "test", "fix", "review"]:
+                        assignee = cand
+                        is_task = True
+
+            # C. Addressed to member: "Sarah, please implement...", "Alex, can you deploy...", "Hey Rahul, take care of..."
+            if not assignee:
+                addressed_match = re.search(
+                    r"^(?:hey\s+)?([A-Za-z]+)(?:,\s*|\s*:\s*|\s+)(?:please|can you|could you|would you|you need to|you should|you take|take\s+care\s+of|take\s+ownership|work\s+on|you're assigned to|you are assigned to|handle|fix|implement|deploy|review|test|build|write|create|update)\b",
+                    content,
+                    re.IGNORECASE
+                )
+                if addressed_match:
+                    cand = addressed_match.group(1).strip()
+                    if cand.lower() not in ["anyone", "someone", "everyone", "today", "tomorrow", "also", "well", "now", "here", "let", "lets", "if", "we"]:
+                        assignee = cand
+                        is_task = True
+
+            # D. Trailing question assignment: "Can you handle the database, Sarah?"
+            if not assignee:
+                trailing_match = re.search(
+                    r"(?:can you|could you|please|will you)\s+.*?[,\s]+([A-Za-z]+)\??$",
+                    content,
+                    re.IGNORECASE
+                )
+                if trailing_match:
+                    cand = trailing_match.group(1).strip("?., ")
+                    if cand.lower() not in ["please", "asap", "today", "tomorrow", "now", "here", "well"]:
+                        assignee = cand
+                        is_task = True
+
+            # E. Third-person action: "Marcus will test..."
+            if not assignee:
+                third_match = re.search(
+                    r"\b([A-Z][a-z]+)\s+(?:will|to|should)\s+(?:handle|implement|deploy|fix|build|write|review|test|create|update|lead)\b",
+                    content
+                )
+                if third_match:
+                    cand = third_match.group(1).strip()
+                    if cand.lower() not in ["we", "they", "someone", "anyone"]:
+                        assignee = cand
+                        is_task = True
+
+            # F. First person commitment ("I will...", "I'll...", "I am going to...")
+            if not assignee and any(k in c_lower for k in ["i will", "i'll", "i am going to", "i can", "i'll handle", "count me in", "i commit"]):
+                assignee = speaker if (speaker and speaker.lower() not in ["speaker", "unknown", "admin"]) else "Speaker"
                 is_task = True
-            elif "fastapi backend" in c_lower or "groq orchestration" in c_lower or "backend pipeline" in c_lower:
-                title = "Implement FastAPI backend and Groq multi-agent orchestration pipeline"
-                assignee = speaker or "Elena Rostova"
-                deadline = "2026-11-25"
-                priority = "URGENT"
-                is_task = True
-            elif "gmail smtp" in c_lower or "email automation" in c_lower or "reminder worker" in c_lower or "email execution" in c_lower:
-                title = "Integrate Gmail SMTP email execution and persistent reminder worker"
-                assignee = speaker or "Elena Rostova"
-                deadline = "2026-11-26"
-                priority = "HIGH"
-                is_task = True
-            elif "qa test suite" in c_lower or "end-to-end test" in c_lower or "websocket tests" in c_lower:
-                title = "Develop end-to-end test suite and WebSocket stress tests"
-                assignee = speaker or "Marcus Vance"
-                deadline = "2026-11-28"
-                priority = "MEDIUM"
-                is_task = True
-            elif "demo script" in c_lower or "product positioning" in c_lower or "slide deck" in c_lower:
-                title = "Prepare executive demo walkthrough and launch narrative"
-                assignee = speaker or "Sarah Chen"
-                deadline = "2026-11-29"
-                priority = "MEDIUM"
-                is_task = True
-            elif any(k in c_lower for k in ["audit workspace security", "someone needs to audit", "review security", "we need someone to review", "audit permissions"]):
+
+            # 2. Check general task keywords if not already matched
+            if not is_task:
+                if any(k in c_lower for k in [
+                    "finish the frontend", "complete frontend", "fastapi backend", "groq orchestration",
+                    "backend pipeline", "gmail smtp", "email automation", "reminder worker", "qa test suite",
+                    "end-to-end test", "websocket tests", "demo script", "product positioning",
+                    "will handle", "take care of", "action item", "todo:", "task:", "need to", "needs to",
+                    "responsible for", "please implement", "please deploy", "please review", "please fix",
+                    "please build", "please test", "please update", "please prepare", "please create",
+                    "please configure", "please audit", "please handle", "please write", "can you please",
+                    "could you please", "can you handle", "could you handle", "can you deploy", "could you deploy",
+                    "can you fix", "could you fix", "can you review", "could you review", "can you test",
+                    "could you test", "can you build", "could you build"
+                ]):
+                    is_task = True
+                    if not assignee and speaker and speaker.lower() not in ["speaker", "unknown"]:
+                        assignee = speaker
+
+            # Check ambiguous audit task
+            if any(k in c_lower for k in ["audit workspace security", "someone needs to audit", "review security", "we need someone to review", "audit permissions"]):
                 title = "Audit workspace security and browser tab audio permissions"
-                assignee = None  # Explicitly ambiguous! Requires human signoff
+                assignee = None
                 deadline = "2026-11-26"
                 priority = "HIGH"
                 classification_type = "INFERRED"
                 confidence = 0.65
                 is_task = True
-            elif any(k in c_lower for k in [
-                "will handle", "i will", "i'll", "i am going to", "i can", "take care of", 
-                "action item:", "action item", "todo:", "task:", "need to", "needs to", "responsible for"
-            ]):
-                clean_title = re.sub(
-                    r"^(?:i will|i'll|i am going to|i can|action item:?|todo:?|task:?)\s*",
-                    "",
-                    content,
-                    flags=re.IGNORECASE
-                ).strip()
-                if len(clean_title) > 3:
-                    title = clean_title[0].upper() + clean_title[1:]
-                else:
-                    title = content
-                priority = "HIGH" if any(w in c_lower for w in ["urgent", "asap", "blocker", "today"]) else "MEDIUM"
-                deadline = (base_date + timedelta(days=5)).strftime("%Y-%m-%d")
-                is_task = True
 
-            if is_task and title:
+            if is_task:
+                # 3. Clean up Title
+                if not title:
+                    clean_title = content
+                    # Remove speaker prefix: "[00:01:23] Alex (DevOps):"
+                    clean_title = re.sub(r"^(?:\[?[\d:]+\]?\s*)?(?:[A-Za-z0-9_\s\(\)\.\-]+?:\s*)?", "", clean_title)
+                    # Remove addressed person: "Hey Rahul,", "Sarah,", "Alex:"
+                    clean_title = re.sub(r"^(?:hey\s+[A-Za-z]+[,\s]+|[A-Za-z]+,\s*|[A-Za-z]+:\s*)", "", clean_title, flags=re.IGNORECASE)
+                    # Remove assignment prefix syntax
+                    clean_title = re.sub(
+                        r"^(?:assign(?:ed|ing)?\s+(?:(?:this\s+)?(?:task|action\s+item|ticket|issue)\s+)?to\s+[A-Za-z0-9_\(\)\.\-]+(?:\s*:\s*|\s+to\s+|\s+for\s+|\s+)?|"
+                        r"task\s+for\s+[A-Za-z0-9_\(\)\.\-]+(?:\s*:\s*|\s+to\s+|\s+for\s+|\s+)?|"
+                        r"[A-Za-z0-9_\(\)\.\-]+\s+is\s+assigned\s+to\s+)",
+                        "",
+                        clean_title,
+                        flags=re.IGNORECASE
+                    )
+                    # Remove common imperative prefixes
+                    clean_title = re.sub(
+                        r"^(?:can\s+you\s+(?:please\s+)?|could\s+you\s+(?:please\s+)?|please\s+|would\s+you\s+(?:please\s+)?|"
+                        r"i\s+will\s+|i'll\s+|i\s+am\s+going\s+to\s+|i\s+can\s+|we\s+need\s+to\s+|need\s+to\s+|"
+                        r"action\s+item:?\s*|todo:?\s*|task:?\s*)",
+                        "",
+                        clean_title,
+                        flags=re.IGNORECASE
+                    )
+                    # Strip trailing question addressed person: ", David?"
+                    clean_title = re.sub(r",\s*[A-Za-z]+\s*\?$", "", clean_title)
+                    clean_title = clean_title.strip("?., -:; ")
+
+                    # Fallback for specific predefined demo items if matched
+                    if "finish the frontend" in c_lower or "complete frontend" in c_lower:
+                        clean_title = "Complete frontend implementation and responsive UI"
+                        deadline = "2026-11-27"
+                        priority = "HIGH"
+                    elif "fastapi backend" in c_lower or "groq orchestration" in c_lower or "backend pipeline" in c_lower:
+                        clean_title = "Implement FastAPI backend and Groq multi-agent orchestration pipeline"
+                        deadline = "2026-11-25"
+                        priority = "URGENT"
+                    elif "gmail smtp" in c_lower or "email automation" in c_lower or "reminder worker" in c_lower:
+                        clean_title = "Integrate Gmail SMTP email execution and persistent reminder worker"
+                        deadline = "2026-11-26"
+                        priority = "HIGH"
+                    elif "qa test suite" in c_lower or "end-to-end test" in c_lower or "websocket tests" in c_lower:
+                        clean_title = "Develop end-to-end test suite and WebSocket stress tests"
+                        deadline = "2026-11-28"
+                        priority = "MEDIUM"
+                    elif "demo script" in c_lower or "product positioning" in c_lower or "slide deck" in c_lower:
+                        clean_title = "Prepare executive demo walkthrough and launch narrative"
+                        deadline = "2026-11-29"
+                        priority = "MEDIUM"
+
+                    if len(clean_title) > 3:
+                        title = clean_title[0].upper() + clean_title[1:]
+                    else:
+                        title = content
+
+                # 4. Extract Deadline if mentioned
+                if not deadline:
+                    dl_match = re.search(r"\bby\s+([a-zA-Z]+|\d{4}-\d{2}-\d{2})\b", c_lower)
+                    if dl_match:
+                        token = dl_match.group(1).lower()
+                        if token in weekday_map:
+                            deadline = (base_date + timedelta(days=5)).strftime("%Y-%m-%d")
+                        elif token == "tomorrow":
+                            deadline = (base_date + timedelta(days=1)).strftime("%Y-%m-%d")
+                        elif token == "today":
+                            deadline = base_date.strftime("%Y-%m-%d")
+                        elif re.match(r"^\d{4}-\d{2}-\d{2}$", token):
+                            deadline = token
+                    if not deadline:
+                        deadline = (base_date + timedelta(days=5)).strftime("%Y-%m-%d")
+
                 tasks.append({
                     "title": title,
                     "description": f"Extracted from conversation: {content}",
