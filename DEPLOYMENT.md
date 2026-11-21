@@ -73,7 +73,7 @@ This guide details how to deploy MEETME to production in under 10 minutes using:
 
 5. Click **Create Web Service**.
 6. Once deployed, note your Render backend URL:
-   `https://meetme-backend.onrender.com`
+   `https://meetme-8r0u.onrender.com`
 
 ---
 
