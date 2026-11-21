@@ -100,7 +100,10 @@ async def get_analytics_metrics(
     classification_breakdown = {cat: count for cat, count in class_res}
 
     # 9. Recent Automation Activity
-    auto_stmt = select(AutomationLog).where(AutomationLog.workspace_id == ws_id).order_by(desc(AutomationLog.created_at)).limit(6)
+    auto_stmt = select(AutomationLog)
+    if workspace_id:
+        auto_stmt = auto_stmt.where(AutomationLog.workspace_id == workspace_id)
+    auto_stmt = auto_stmt.order_by(desc(AutomationLog.created_at)).limit(6)
     recent_automations = (await db.execute(auto_stmt)).scalars().all()
     automation_activity = [
         {
