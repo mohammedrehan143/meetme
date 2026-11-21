@@ -73,7 +73,9 @@ app.add_middleware(
 )
 
 # Register routers
-app.include_router(meetings.router)
+# Support canonical /api routes as well as direct root aliases for full backwards/external client compatibility
+app.include_router(meetings.router, prefix="/api/meetings")
+app.include_router(meetings.router, prefix="/meetings")
 app.include_router(live.router)
 app.include_router(tasks.router)
 app.include_router(approvals.router)

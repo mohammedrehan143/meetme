@@ -49,6 +49,7 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 @router.websocket("/ws/live-meeting/{meeting_id}")
+@router.websocket("/api/ws/live-meeting/{meeting_id}")
 async def websocket_live_meeting(websocket: WebSocket, meeting_id: str):
     await manager.connect(meeting_id, websocket)
     try:

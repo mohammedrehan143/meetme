@@ -5,11 +5,18 @@ import {
 export const PRODUCTION_API_URL = "https://meetme-8r0u.onrender.com/api";
 export const PRODUCTION_WS_URL = "wss://meetme-8r0u.onrender.com";
 
-// In production or when deployed on Vercel, directly connect to the live Render backend
-const API_BASE = (
-  process.env.NEXT_PUBLIC_API_URL?.trim() || 
-  PRODUCTION_API_URL
-).replace(/\/+$/, "");
+function resolveApiBase(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (!envUrl) return PRODUCTION_API_URL;
+  let clean = envUrl.replace(/\/+$/, "");
+  // Ensure the base URL includes /api so endpoints like /meetings, /tasks map correctly
+  if (!clean.endsWith("/api") && !clean.endsWith("/v1")) {
+    clean = `${clean}/api`;
+  }
+  return clean;
+}
+
+const API_BASE = resolveApiBase();
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {

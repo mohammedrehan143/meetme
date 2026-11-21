@@ -9,18 +9,19 @@ from pydantic import BaseModel
 
 from backend.app.core.database import get_db
 from backend.app.core.config import settings
-from backend.app.models.schema import Meeting, MeetingTranscript, Task, Approval
+from backend.app.models.schema import Meeting, MeetingTranscript, Task, Approval, Workspace
 from backend.app.agents.orchestrator import orchestrator_agent
 from backend.app.services.groq_service import groq_service
 
-router = APIRouter(prefix="/api/meetings", tags=["meetings"])
+router = APIRouter(tags=["meetings"])
 
 class CreateMeetingRequest(BaseModel):
     title: str
     recording_mode: str = "RECORDED" # LIVE or RECORDED
     workspace_id: Optional[str] = None
 
-@router.get("")
+@router.get("", include_in_schema=True)
+@router.get("/", include_in_schema=False)
 async def list_meetings(
     workspace_id: Optional[str] = None,
     limit: int = 50,
@@ -124,12 +125,25 @@ async def get_meeting_details(
         "tasks": tasks
     }
 
-@router.post("")
+@router.post("", include_in_schema=True)
+@router.post("/", include_in_schema=False)
 async def create_meeting(
     payload: CreateMeetingRequest,
     db: AsyncSession = Depends(get_db)
 ):
     ws_id = payload.workspace_id or settings.DEFAULT_WORKSPACE_ID
+    
+    # Ensure workspace exists before adding meeting to avoid ForeignKey violation
+    ws_check = await db.execute(select(Workspace).where(Workspace.id == ws_id))
+    if not ws_check.scalar_one_or_none():
+        any_ws = (await db.execute(select(Workspace).limit(1))).scalar_one_or_none()
+        if any_ws:
+            ws_id = any_ws.id
+        else:
+            ws = Workspace(id=ws_id, name="Default Workspace", slug="default")
+            db.add(ws)
+            await db.flush()
+
     meeting = Meeting(
         workspace_id=ws_id,
         title=payload.title,
