@@ -231,15 +231,19 @@ class EmailService:
 
                     return result
                 else:
-                    err_msg = f"Resend API error ({resp.status_code}): {resp.text}"
+                    detail = ""
+                    try:
+                        err_json = resp.json()
+                        detail = err_json.get("message") or err_json.get("error") or resp.text
+                    except Exception:
+                        detail = resp.text
+                    err_msg = f"Resend API error ({resp.status_code}): {detail}"
                     logger.error(err_msg)
-                    if not self.is_smtp_configured:
-                        return self._record_failure(err_msg)
+                    return self._record_failure(err_msg)
             except Exception as e:
                 err_msg = f"Resend connection error: {str(e)}"
                 logger.error(err_msg)
-                if not self.is_smtp_configured:
-                    return self._record_failure(err_msg)
+                return self._record_failure(err_msg)
 
         # 3. Native Gmail SMTP Delivery (Dual port 587/465 fallback)
         if self.is_smtp_configured:
