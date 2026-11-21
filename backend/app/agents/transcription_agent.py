@@ -81,8 +81,8 @@ class TranscriptionAgent:
             text = line
             timestamp = f"00:{i*15//60:02d}:{i*15%60:02d}"
 
-            # Check if line starts with Speaker Name: or [00:01:23] Rahul:
-            match = re.match(r"(?:\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*)?([A-Za-z\s]+):\s*(.*)", line)
+            # Check if line starts with Speaker Name: or [00:01:23] Alex (DevOps Lead):
+            match = re.match(r"^(?:\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*)?([^:\n]+?):\s*(.*)$", line)
             if match:
                 if match.group(1):
                     timestamp = match.group(1)
